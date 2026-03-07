@@ -1,7 +1,3 @@
-"""
-Comprehensive README for the Graph RAG as a Service Platform
-"""
-
 # Graph RAG as a Service
 
 An extensible, production-grade Agentic Graph RAG platform that unifies knowledge from multiple sources into an intelligent retrieval system.
@@ -16,11 +12,10 @@ An extensible, production-grade Agentic Graph RAG platform that unifies knowledg
 - **Hybrid Storage**: Unified Neo4j implementation for both graph and vector storage
 
 ### Agentic Retrieval System
-- **Dynamic Tool Selection**: Intelligent routing between vector search, graph traversal, and Cypher queries
+- **Dynamic Tool Selection**: Intelligent routing between vector search, graph traversal, Cypher queries, and metadata filtering
 - **Multi-Step Reasoning**: Query decomposition with iterative refinement
 - **LangGraph Orchestration**: State machine-based agent workflow with fallback mechanisms
 - **Hallucination Guards**: Schema validation and self-correcting Cypher generation
-- **Semantic Caching**: Redis-based caching for improved performance
 
 ### Production-Grade Architecture
 - **FastAPI Backend**: Async API with JWT authentication and RBAC
@@ -58,12 +53,12 @@ An extensible, production-grade Agentic Graph RAG platform that unifies knowledg
 - **API Framework**: FastAPI with async/await support
 - **Orchestration**: LangGraph for agent workflows
 - **LLMs**: Multi-provider support (OpenAI, Anthropic, Gemini, Ollama)
-- **Embeddings**: Ollama BGE-M3 (1024 dimensions)
+- **Embeddings**: nomic-embed-text via Ollama (768 dimensions)
 - **Graph Database**: Neo4j 5.x with vector capabilities
 - **Vector Store**: Neo4j Vector Index (unified storage)
 - **Task Queue**: Celery with Redis broker
-- **Observability**: OpenTelemetry + Prometheus-compatible metrics
-- **Package Manager**: UV (fast Python package management)
+- **Observability**: OpenTelemetry tracing
+- **Package Manager**: uv (fast Python package management)
 
 ## 📦 Installation
 
@@ -92,30 +87,41 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
-4. **Start Neo4j**
+4. **Start Neo4j** (required)
+
+> Neo4j must be running before starting the server. The easiest way is Docker:
+
 ```bash
-# Using Docker
-docker run -d \
-  --name neo4j \
+docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/password \
-  neo4j
+  neo4j:latest
 ```
 
-5. **Start Redis**
+Or install Neo4j Desktop from [neo4j.com/download](https://neo4j.com/download/).
+
+5. **Start Redis** (required for Celery worker)
+
 ```bash
-# Using Docker
-docker run -d \
-  --name redis \
-  -p 6379:6379 \
-  redis
+# Docker (simplest)
+docker run -d --name redis -p 6379:6379 redis:alpine
+
+# Or install Redis natively: https://redis.io/docs/install/
 ```
 
-6. **Start Ollama (optional)**
+6. **Start Ollama** (optional — only if using Ollama as LLM provider)
+
 ```bash
-# Download and start Ollama
-ollama pull llama3.2
-ollama pull bge-m3
+# Install from https://ollama.com, then pull:
+ollama pull nomic-embed-text     # required for embeddings when using Ollama
+ollama pull deepseek-r1:7b       # or any model you prefer
+```
+
+Update `.env`:
+```
+DEFAULT_LLM_PROVIDER=ollama
+OLLAMA_MODEL=deepseek-r1:7b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 
 ## 🚀 Usage
@@ -236,7 +242,7 @@ graph-RAG/
 ## 🔑 Key Features Explained
 
 ### 1. Pluggable Architecture
-The system uses abstract base classes (`GraphStore`, `VectorStore`, `LLMProvider`) to ensure no vendor lock-in. Easily swap Neo4j for Neptune, or add new LLM providers.
+The system uses abstract base classes (`GraphStore`, `VectorStore`, `LLMProvider`) to ensure no vendor lock-in. Easily swap in different LLM providers or extend the graph store implementation.
 
 ### 2. Entity Resolution
 Multi-stage entity resolution with:
@@ -252,7 +258,7 @@ Multi-stage entity resolution with:
 ### 4. Agentic Retrieval
 The retrieval agent:
 1. Decomposes complex queries into sub-queries
-2. Routes each sub-query to the optimal tool (vector/graph/cypher)
+2. Routes each sub-query to the optimal tool (vector / graph / cypher / filter)
 3. Validates results against schema (hallucination guard)
 4. Synthesizes final response with reasoning chain
 5. Implements timeout and fallback mechanisms
@@ -270,7 +276,7 @@ The retrieval agent:
 uv run pytest
 
 # With coverage
-uv run pytest --cov=graph_rag_service
+uv run pytest --cov=src/graph_rag_service
 ```
 
 ## 📊 Monitoring
@@ -291,22 +297,24 @@ The system provides:
 
 ## 🚀 Production Deployment
 
-### Docker Deployment
-```bash
-# Build image
-docker build -t graph-rag-service .
+This project runs as three local processes. For production deployments, containerise each process separately:
 
-# Run with docker-compose
-docker-compose up -d
-```
+| Process | Command |
+|---|---|
+| API Server | `uv run python main.py` |
+| Celery Worker | `uv run celery -A src.graph_rag_service.workers.celery_worker worker` |
+| Frontend | `cd frontend && uv run streamlit run app.py` |
+
+External dependencies (Neo4j, Redis) can be run via Docker, managed services, or any hosted provider.
 
 ### Environment Variables
-Key settings in `.env`:
+Key settings in `.env` (copy from `.env.example`):
 - `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`
 - `REDIS_HOST`, `REDIS_PORT`
-- `DEFAULT_LLM_PROVIDER` (openai, anthropic, gemini, ollama)
+- `DEFAULT_LLM_PROVIDER` (`openai` | `anthropic` | `gemini` | `ollama`)
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`
-- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`
+- `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_MODEL`
+- `SECRET_KEY` — change this in production
 
 ## 📄 License
 

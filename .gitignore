@@ -1,0 +1,81 @@
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[oc]
+*.pyo
+*.pyd
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+*.egg
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── Environment / Secrets (NEVER commit real keys) ────────────────────────────
+.env
+.env.local
+.env.*.local
+*.secret
+
+# ── Uploaded user data ────────────────────────────────────────────────────────
+data/uploads/*
+!data/uploads/.gitkeep
+
+# ── One-off debug / experiment test files ─────────────────────────────────────
+test_combinations.py
+test_document_embedding.py
+test_embedding.py
+test_exact_combination.py
+test_narrow_down.py
+test_nomic.py
+test_resume_text.py
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Logs & temp ───────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Docs that are project-internal notes (not needed in repo) ─────────────────
+BGE_M3_ISSUE_ANALYSIS.md
+CONFIGURATION_CHANGES.md
+PROJECT_COMPLETION_CHECKLIST.md
+LLAMAPARSE_SETUP.md
+
+# ── Lyzr Hackathon source material (not part of the submitted codebase) ────────
+Lyzr_Hackathon_Problem_Statement.md
+
+# ── UV lock / python version pins (repo-specific, not portable) ─────────────────
+# uv.lock          # keep: ensures reproducible installs for reviewers
+.python-version
+
+# ── pyvis / notebook temp files ──────────────────────────────────────────────
+*.html
+!frontend/*.html
+
+# ── Celery / task artefacts ───────────────────────────────────────────────────
+celerybeat-schedule
+celerybeat.pid
+
+# ── Neo4j local data (if ever mounted) ───────────────────────────────────────
+neo4j_data/
+
+# ── Windows shortcuts / artifacts ────────────────────────────────────────────
+*.lnk

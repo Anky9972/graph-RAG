@@ -9,28 +9,28 @@ from src.graph_rag_service.core.models import Entity, Relationship, Chunk
 def test_entity_creation():
     """Test creating an entity"""
     entity = Entity(
-        name="Lyzr AI",
+        name="Acme Corp",
         type="Company",
-        properties={"industry": "AI", "founded": "2023"}
+        properties={"industry": "Technology", "founded": "2020"}
     )
     
-    assert entity.name == "Lyzr AI"
+    assert entity.name == "Acme Corp"
     assert entity.type == "Company"
-    assert entity.properties["industry"] == "AI"
+    assert entity.properties["industry"] == "Technology"
     assert entity.confidence == 1.0
 
 
 def test_relationship_creation():
     """Test creating a relationship"""
     rel = Relationship(
-        source="Lyzr AI",
-        target="OpenAI",
+        source="Acme Corp",
+        target="Partner Inc",
         type="PARTNERS_WITH",
         confidence=0.9
     )
     
-    assert rel.source == "Lyzr AI"
-    assert rel.target == "OpenAI"
+    assert rel.source == "Acme Corp"
+    assert rel.target == "Partner Inc"
     assert rel.type == "PARTNERS_WITH"
     assert rel.confidence == 0.9
 

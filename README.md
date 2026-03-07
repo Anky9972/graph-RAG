@@ -180,7 +180,7 @@ curl -X POST "http://localhost:8000/api/query" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "How is the CEO of Lyzr related to OpenAI?",
+    "query": "What are the main topics covered in the documents?",
     "top_k": 5
   }'
 ```
@@ -311,14 +311,6 @@ Key settings in `.env`:
 ## 📄 License
 
 MIT License - see LICENSE file for details
-
-## 🙏 Acknowledgments
-
-Built for the Lyzr Hiring Hackathon 2025 with focus on:
-- **System Architecture**: Modular, scalable design
-- **Graph Quality**: Advanced entity resolution and ontology management
-- **Retrieval Intelligence**: Multi-tool agentic system with reasoning
-- **Extensibility**: Pluggable components and clean APIs
 
 ---
 

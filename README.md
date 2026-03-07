@@ -316,10 +316,6 @@ Key settings in `.env` (copy from `.env.example`):
 - `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_EMBEDDING_MODEL`
 - `SECRET_KEY` — change this in production
 
-## 📄 License
-
-MIT License - see LICENSE file for details
-
 ---
 
 **Project Status**: Production-ready MVP with extensible architecture

@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi>=0.129.0",
+    "fastapi[standard]>=0.129.0",
     "uvicorn[standard]>=0.41.0",
     "llama-index-core>=0.14.14",
     "langgraph>=1.0.8",
@@ -46,6 +46,9 @@ dependencies = [
     "streamlit>=1.55.0",
     "requests>=2.32.5",
     "pyvis>=0.3.2",
+    "crawl4ai>=0.4.0",
+    "markdownify>=1.2.2",
+    "flower>=2.0.1",
 ]
 
 [project.optional-dependencies]

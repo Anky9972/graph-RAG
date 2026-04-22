@@ -22,6 +22,14 @@ env/
 .env.*.local
 *.secret
 
+# ── Node.js / NPM ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+
 # ── Uploaded user data ────────────────────────────────────────────────────────
 data/uploads/*
 !data/uploads/.gitkeep

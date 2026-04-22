@@ -43,34 +43,28 @@ def setup_observability(app=None):
         "deployment.environment": settings.environment
     })
     
-    # Setup tracing
+    # Setup tracing without polluting console stdout
     if settings.enable_tracing:
         tracer_provider = TracerProvider(resource=resource)
-        
-        # Add span processor (console for now, can add OTLP exporter)
-        span_processor = BatchSpanProcessor(ConsoleSpanExporter())
-        tracer_provider.add_span_processor(span_processor)
-        
+        # Removed ConsoleSpanExporter to absolutely ensure no stdout flooding
         trace.set_tracer_provider(tracer_provider)
         
         # Instrument FastAPI if provided
         if app:
             FastAPIInstrumentor.instrument_app(app)
         
-        logger.info("Tracing enabled")
+        logger.info("Tracing enabled (Silently)")
     
     # Setup metrics
     if settings.enable_metrics:
-        metric_reader = PeriodicExportingMetricReader(
-            ConsoleMetricExporter()
-        )
+        # Removed ConsoleMetricExporter to prevent massive JSON stdout dumps
         meter_provider = MeterProvider(
             resource=resource,
-            metric_readers=[metric_reader]
+            metric_readers=[]
         )
         metrics.set_meter_provider(meter_provider)
         
-        logger.info("Metrics enabled")
+        logger.info("Metrics enabled (Silently)")
 
 
 def get_tracer(name: str):

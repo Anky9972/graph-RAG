@@ -1,0 +1,16 @@
+{
+  "name": "graph-rag",
+  "version": "1.0.0",
+  "description": "Agentic Graph RAG Application",
+  "private": true,
+  "scripts": {
+    "rag": "concurrently -k -p \"[{name}]\" -n \"SERVER,WORKER,FRONTEND\" -c \"magenta,blue,cyan\" \"npm run run:server\" \"npm run run:worker\" \"npm run run:frontend\"",
+    "run:server": "uv run python main.py",
+    "run:worker": "uv run celery -A src.graph_rag_service.workers.celery_worker worker --loglevel=info --concurrency=4 --pool=threads",
+    "run:frontend": "npm --prefix frontend-react run dev",
+    "postinstall": "npm --prefix frontend-react install && uv sync && uv run playwright install chromium"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

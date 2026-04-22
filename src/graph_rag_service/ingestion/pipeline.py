@@ -50,7 +50,8 @@ class IngestionPipeline:
         self,
         file_path: Path,
         ontology: Optional[OntologySchema] = None,
-        store_results: bool = True
+        store_results: bool = True,
+        progress_callback=None
     ) -> ExtractionResult:
         """
         Ingest a single document through the full pipeline
@@ -94,7 +95,8 @@ class IngestionPipeline:
         extraction_result = await self.extractor.extract_from_chunks(
             chunks,
             ontology=ontology,
-            resolve_entities=True
+            resolve_entities=True,
+            progress_callback=progress_callback
         )
         
         print(f"Extracted {len(extraction_result.entities)} entities")

@@ -103,8 +103,13 @@ class UnifiedLLMProvider(LLMProvider):
         last_error = None
         for attempt in range(_MAX_RETRIES):
             try:
-                response = await self.llm.achat(messages)
+                response = await asyncio.wait_for(self.llm.achat(messages), timeout=90.0)
                 return response.message.content
+            except asyncio.TimeoutError as e:
+                last_error = e
+                print(f"LLM request timed out (attempt {attempt + 1}/{_MAX_RETRIES}).")
+                if attempt < _MAX_RETRIES - 1:
+                    await asyncio.sleep(2)
             except Exception as e:
                 last_error = e
                 err_str = str(e)
@@ -178,12 +183,24 @@ Only return the JSON object, no additional text.
         embed_provider = settings.embedding_provider
         
         if embed_provider == "gemini":
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=text,
-                task_type="retrieval_document",
-            )
-            return result["embedding"]
+            last_error = None
+            for attempt in range(6):
+                try:
+                    result = genai.embed_content(
+                        model="models/gemini-embedding-001",
+                        content=text,
+                        task_type="retrieval_document",
+                    )
+                    return result["embedding"]
+                except Exception as e:
+                    last_error = e
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        delay = 5 * (2 ** attempt)
+                        print(f"Embedding rate limited, retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise
+            raise last_error
         
         elif embed_provider == "ollama":
             if not self.embedder:
@@ -213,13 +230,28 @@ Only return the JSON object, no additional text.
         if embed_provider == "gemini":
             embeddings = []
             for text in texts:
-                result = genai.embed_content(
-                    model="models/gemini-embedding-001",
-                    content=text,
-                    task_type="retrieval_document",
-                )
-                embeddings.append(result["embedding"])
-                await asyncio.sleep(0.1)  # gentle rate limiting
+                last_error = None
+                for attempt in range(6):
+                    try:
+                        result = genai.embed_content(
+                            model="models/gemini-embedding-001",
+                            content=text,
+                            task_type="retrieval_document",
+                        )
+                        embeddings.append(result["embedding"])
+                        await asyncio.sleep(0.5)  # More gentle rate limiting
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if "429" in str(e) or "quota" in str(e).lower():
+                            delay = 5 * (2 ** attempt)
+                            print(f"Embedding rate limited, retrying in {delay}s...")
+                            await asyncio.sleep(delay)
+                        else:
+                            raise
+                if last_error and len(embeddings) < len(texts):
+                    # If we exhausted retries for this chunk, fail
+                    raise last_error
             return embeddings
         
         elif embed_provider == "ollama":

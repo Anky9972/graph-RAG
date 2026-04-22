@@ -5,16 +5,13 @@ JWT-based authentication with role-based access control
 
 from datetime import datetime, timedelta
 from typing import Optional
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from ..config import settings
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Security
 security = HTTPBearer()
@@ -40,12 +37,18 @@ class User(BaseModel):
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # bcrypt requires bytes, truncate to 72 bytes as per bcrypt spec
+        password_bytes = plain_password.encode('utf-8')[:72]
+        return bcrypt.checkpw(password_bytes, hashed_password.encode('utf-8'))
+    except ValueError:
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """Hash password"""
-    return pwd_context.hash(password)
+    password_bytes = password.encode('utf-8')[:72]
+    return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

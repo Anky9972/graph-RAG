@@ -86,7 +86,8 @@ Use only the entity types and relationship types provided in the ontology."""
         self,
         chunks: List[Chunk],
         ontology: Optional[OntologySchema] = None,
-        resolve_entities: bool = True
+        resolve_entities: bool = True,
+        progress_callback=None
     ) -> ExtractionResult:
         """
         Extract from multiple chunks with entity resolution
@@ -110,12 +111,21 @@ Use only the entity types and relationship types provided in the ontology."""
             async with semaphore:
                 return await self.extract_from_chunk(chunk, ontology)
         
-        results = await asyncio.gather(
-            *[process_chunk(chunk) for chunk in chunks],
-            return_exceptions=True
-        )
+        tasks = [asyncio.create_task(process_chunk(chunk)) for chunk in chunks]
+        results_list = []
+        
+        for i, coro in enumerate(asyncio.as_completed(tasks)):
+            try:
+                res = await coro
+                results_list.append(res)
+            except Exception as e:
+                results_list.append(e)
+                
+            if progress_callback:
+                progress_callback(i + 1, len(chunks))
         
         # Combine results
+        results = results_list
         all_entities = []
         all_relationships = []
         

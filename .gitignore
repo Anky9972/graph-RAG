@@ -76,6 +76,8 @@ Lyzr_Hackathon_Problem_Statement.md
 
 # ── pyvis / notebook temp files ──────────────────────────────────────────────
 *.html
+!frontend-react/index.html
+!frontend-react/*.html
 !frontend/*.html
 
 # ── Celery / task artefacts ───────────────────────────────────────────────────

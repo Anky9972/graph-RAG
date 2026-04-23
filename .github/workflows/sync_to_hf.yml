@@ -8,10 +8,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          lfs: true
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://anky2002:$HF_TOKEN@huggingface.co/spaces/anky2002/graph-rag master:main
+        run: |
+          # 1. Turn on Large File Storage (LFS)
+          git lfs install
+          
+          # 2. Tell Hugging Face to properly handle images
+          echo "*.png filter=lfs diff=lfs merge=lfs -text" >> .gitattributes
+          echo "*.jpg filter=lfs diff=lfs merge=lfs -text" >> .gitattributes
+          echo "*.ico filter=lfs diff=lfs merge=lfs -text" >> .gitattributes
+          
+          # 3. Wipe the hidden git history in the runner to clear past image errors
+          rm -rf .git
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          
+          # 4. Create a fresh, clean package and force push it
+          git init
+          git checkout -b main
+          git add .
+          git commit -m "Automated sync to Hugging Face"
+          git push --force https://anky2002:$HF_TOKEN@huggingface.co/spaces/anky2002/graph-rag main

@@ -1,9 +1,7 @@
 name: Sync to Hugging Face
 on:
   push:
-    branches: [main]
-  force_push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   sync-to-hub:

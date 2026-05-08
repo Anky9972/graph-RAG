@@ -1,10 +1,7 @@
 """
-EntityEnricher — MiroFish Point 2: Entity Profile Summaries
+EntityEnricher: Entity Profile Summaries
 Traverses each entity's graph neighborhood and generates an LLM-synthesized
 summary stored as `e.summary` on the Neo4j node.
-
-Inspired by MiroFish's oasis_profile_generator.py which builds rich
-psychological + demographic profiles for simulation agents from graph data.
 """
 
 from __future__ import annotations
@@ -76,10 +73,10 @@ class EntityEnricher:
         )
         query = f"""
         MATCH (e:Entity)
-        WHERE COUNT { (e)--() } >= $min_connections
+        WHERE apoc.node.degree(e) >= $min_connections
         {where_clause}
         RETURN e.name as name, e.type as type
-        ORDER BY COUNT { (e)--() } DESC
+        ORDER BY apoc.node.degree(e) DESC
         """
         try:
             rows = await self.store.execute_query(

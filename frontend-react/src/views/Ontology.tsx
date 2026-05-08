@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DriftReport, DocumentInfo } from '../types/api';
 import { Database, GitMerge, Settings, Sparkles, Save, Info, Zap, AlertTriangle, Check, X, FileText } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -13,7 +14,7 @@ const Ontology: React.FC = () => {
   const [deduping, setDeduping] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [detectingDrift, setDetectingDrift] = useState(false);
-  const [driftReports, setDriftReports] = useState<any[]>([]);
+  const [driftReports, setDriftReports] = useState<DriftReport[]>([]);
   
   const [version, setVersion] = useState('');
   const [entityTypes, setEntityTypes] = useState('');
@@ -26,7 +27,7 @@ const Ontology: React.FC = () => {
   const [globalRelationshipTypes, setGlobalRelationshipTypes] = useState('');
   const [globalProperties, setGlobalProperties] = useState('');
   
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string>('');
   const [stats, setStats] = useState<any>(null);
   const [docSchemaLoading, setDocSchemaLoading] = useState(false);

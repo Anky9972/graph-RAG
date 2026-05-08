@@ -14,7 +14,6 @@ from llama_index.llms.gemini import Gemini
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core.llms import ChatMessage
-import google.generativeai as genai
 
 from .abstractions import LLMProvider
 from ..config import settings
@@ -41,9 +40,8 @@ class UnifiedLLMProvider(LLMProvider):
         """Initialize the appropriate LLM provider"""
         
         # Configure Gemini SDK if using Gemini for LLM or embeddings
-        if self.provider_name == "gemini" or settings.embedding_provider == "gemini":
-            if settings.google_api_key:
-                genai.configure(api_key=settings.google_api_key)
+        # Removed global global genai.configure() due to poisoning risk.
+        # Llama Index Gemini handles API keys within the constructor.
         
         if self.provider_name == "openai":
             self.llm = OpenAI(

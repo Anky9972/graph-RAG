@@ -1,12 +1,13 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
 from typing import List, Dict, Any, Optional
 
-from ..core.neo4j_store import Neo4jStore
-from ..retrieval.agent import AgentRetrievalSystem
-from ..ingestion.pipeline import IngestionPipeline
-from ..config import settings
-from ..api.models import *
-from ..api.auth import get_current_user
+from ...core.neo4j_store import Neo4jStore
+from ...retrieval.agent import AgentRetrievalSystem
+from ...ingestion.pipeline import IngestionPipeline
+from ...config import settings
+from ...api.models import *
+from ...api.auth import get_current_user, User
 import redis
 
 # Dependency injection for global state
@@ -24,7 +25,7 @@ def get_redis_client(request: Request) -> redis.Redis:
 
 router = APIRouter()
 
-from ..core.storage import get_storage
+from ...core.storage import get_storage
 storage = get_storage()
 
 @router.get("/api/ontology", response_model=OntologyResponse, tags=["Ontology"])
@@ -127,7 +128,7 @@ async def refine_ontology(
         sample_query = "MATCH (c:Chunk) RETURN c.text as text LIMIT 10"
         sample_rows = await request.app.state.graph_store.execute_query(sample_query)
 
-    from ..core.models import Chunk as ChunkModel
+    from ...core.models import Chunk as ChunkModel
     sample_chunks = [
         ChunkModel(text=r["text"] or "", document_id="sample", chunk_index=i)
         for i, r in enumerate(sample_rows) if r.get("text")
@@ -302,11 +303,12 @@ async def reject_drift_report(request: Request,
 
 FRONTEND_DIST = r"D:\Desktop_March_26\LYZR\graph-RAG\frontend-react\dist"
 
-if os.path.exists(FRONTEND_DIST) and os.path.isdir(FRONTEND_DIST):
+if False:
+    pass
     # Mount frontend static assets if they exist (Vite uses /assets by default)
     assets_dir = os.path.join(FRONTEND_DIST, "assets")
     if os.path.exists(assets_dir) and os.path.isdir(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+        # app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
 
     # Catch-all route for SPA routing (except for /api and /docs)
     @router.get("/{full_path:path}", tags=["Frontend SPA"])

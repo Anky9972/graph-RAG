@@ -1,9 +1,9 @@
 """
-ReportAgent — MiroFish Point 3: Full ReACT Analytical Agent
+ReportAgent — Full ReACT Analytical Agent
 Replaces the 72-line stub with a complete ReACT (Reasoning + Acting) loop
 powered by three specialized tools (InsightForge, PanoramaSearch, QuickSearch).
 
-Architecture mirrors MiroFish's report_agent.py + zep_tools.py design:
+Architecture:
 - InsightForgeTool:   Hybrid broad-spectrum retriever (vector + graph + community)
 - PanoramaSearchTool: Entity-type sweep for macro-level statistics
 - QuickSearchTool:    Fast single-entity lookup with direct relationships
@@ -321,12 +321,15 @@ Available tools:
         all_contexts: List[str] = []
         key_entities: List[str] = []
 
+        total_confidence_score = 0.0
+
         for question in sub_questions:
-            section_content, contexts, entities = await self._react_loop(question)
+            section_content, contexts, entities, confidence = await self._react_loop(question)
             if section_content:
                 sections[question] = section_content
             all_contexts.extend(contexts)
             key_entities.extend(entities)
+            total_confidence_score += confidence
 
         # 3. Executive summary
         exec_summary = await self._write_executive_summary(topic, sections)
@@ -334,9 +337,8 @@ Available tools:
         # 4. Key entities dedup
         key_entities = list(dict.fromkeys(key_entities))[:10]
 
-        # 5. Confidence: proportion of sub-questions with substantive answers
-        answered = sum(1 for v in sections.values() if len(v) > 50)
-        confidence = round(answered / max(len(sub_questions), 1), 2)
+        # 5. Confidence logic updated to use actual contextual relevancy confidence rather than length
+        overall_confidence = round(total_confidence_score / max(len(sub_questions), 1), 2)
 
         # 6. Compile markdown
         markdown = self._compile_markdown(
@@ -348,7 +350,7 @@ Available tools:
             executive_summary=exec_summary,
             sections=sections,
             key_entities=key_entities,
-            confidence=confidence,
+            confidence=overall_confidence,
             tool_calls_made=self._tool_calls,
             markdown=markdown,
         )
@@ -397,10 +399,10 @@ Return ONLY a JSON list of strings:
 
     async def _react_loop(
         self, question: str
-    ) -> tuple[str, List[str], List[str]]:
+    ) -> tuple[str, List[str], List[str], float]:
         """
         Run a ReACT iteration for one sub-question.
-        Returns (section_content, context_texts, entity_names).
+        Returns (section_content, context_texts, entity_names, confidence_score).
         """
         collected_contexts: List[str] = []
         entity_names: List[str] = []
@@ -408,9 +410,11 @@ Return ONLY a JSON list of strings:
 
         for step in range(self.MAX_REACT_LOOPS):
             # THINK: which tool next?
-            tool_name, tool_arg = await self._think(
+            thought, tool_name, tool_arg = await self._think(
                 question, observations
             )
+
+            observations.append(f"[Thought]\n{thought}")
 
             if tool_name == "DONE":
                 break
@@ -435,58 +439,43 @@ Return ONLY a JSON list of strings:
 
         # WRITE: draft the section answer
         if collected_contexts:
-            section = await self._write_section(question, collected_contexts)
+            section, confidence = await self._write_section_with_confidence(question, collected_contexts)
         else:
             section = "Insufficient data found in the knowledge graph."
+            confidence = 0.0
 
-        return section, collected_contexts, entity_names
+        return section, collected_contexts, entity_names, confidence
 
     async def _think(
         self, question: str, observations: List[str]
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """Decide which tool to call next, or return DONE."""
         obs_text = "\n".join(observations[-3:]) if observations else "None yet."
 
-        prompt = f"""You are choosing the next retrieval action to answer:
+        prompt = f"""You are deciding the next action to answer:
 "{question}"
 
 {self.TOOLS_DESC}
 Observations so far:
 {obs_text}
 
-If you have enough information to write a good answer, respond with exactly: DONE
-Otherwise respond with: TOOL_NAME(argument)
-Examples:
-  InsightForge(economic impact of climate policy)
-  PanoramaSearch(Organization)
-  QuickSearch(Tesla)
-  DONE
+If you have enough information to write a good answer, choose the DONE tool.
+Otherwise, deeply analyze the observations in a step-by-step thought and pick the most appropriate tool."""
 
-Your response (one line only):"""
+        class AgentAction(BaseModel):
+            thought: str = Field(description="Step by step reasoning analyzing the observations and deciding what to do next.")
+            tool_name: Literal["InsightForge", "PanoramaSearch", "QuickSearch", "DONE"] = Field(description="The chosen tool.")
+            tool_arg: str = Field(description="The argument to pass to the tool. Empty if DONE.")
 
         try:
-            response = await self.llm.complete(prompt, temperature=0.1)
-            line = response.strip().split("\n")[0].strip()
-
-            if line.upper() == "DONE" or not line:
-                return "DONE", ""
-
-            # Parse TOOL_NAME(argument)
-            if "(" in line and line.endswith(")"):
-                tool_raw = line[:line.index("(")].strip()
-                arg = line[line.index("(") + 1 : -1].strip()
-                # Normalize tool name
-                tool_map = {
-                    "insightforge": "InsightForge",
-                    "panoramasearch": "PanoramaSearch",
-                    "quicksearch": "QuickSearch",
-                }
-                tool_name = tool_map.get(tool_raw.lower(), "InsightForge")
-                return tool_name, arg
-
-            return "DONE", ""
-        except Exception:
-            return "DONE", ""
+            action: AgentAction = await self.llm.complete_structured(
+                prompt=prompt,
+                response_model=AgentAction,
+                system_prompt="You are a meticulous investigative agent generating JSON."
+            )
+            return action.thought, action.tool_name, action.tool_arg
+        except Exception as exc:
+            return f"Failed to parse or error: {exc}", "DONE", ""
 
     async def _act(
         self, tool_name: str, tool_arg: str
@@ -503,10 +492,10 @@ Your response (one line only):"""
             print(f"[ReportAgent] Tool {tool_name} failed: {exc}")
         return []
 
-    async def _write_section(
+    async def _write_section_with_confidence(
         self, question: str, contexts: List[str]
-    ) -> str:
-        """Generate a report section from retrieved contexts."""
+    ) -> tuple[str, float]:
+        """Generate a report section from retrieved contexts and provide a structured confidence score."""
         context_text = "\n\n".join(f"[Source {i+1}]: {c}" for i, c in enumerate(contexts[:8]))
 
         prompt = f"""Write a factual, well-structured paragraph answering:
@@ -519,16 +508,21 @@ Instructions:
 - Be specific and cite entities by name
 - Do not hallucinate or add information not in the sources
 - 2-4 sentences is ideal
-- If the data is insufficient, say so"""
+- Also output a confidence score from 0.0 to 1.0 reflecting how fully the data answers the question.
+"""
+        class SectionResult(BaseModel):
+            content: str = Field(description="The 2-4 sentence report section or state data is insufficient.")
+            confidence: float = Field(description="Confidence score 0.0 to 1.0 based on data sufficiency")
 
         try:
-            return await self.llm.complete(
-                prompt,
+            res: SectionResult = await self.llm.complete_structured(
+                prompt=prompt,
+                response_model=SectionResult,
                 system_prompt="You are an analytical writer crafting a knowledge-graph report section.",
-                temperature=0.3,
             )
+            return res.content, res.confidence
         except Exception:
-            return "Unable to generate section due to LLM error."
+            return "Unable to generate section due to LLM error.", 0.0
 
     async def _write_executive_summary(
         self, topic: str, sections: Dict[str, str]

@@ -1,10 +1,7 @@
 """
-GraphMemoryUpdater — MiroFish Point 1: Writable Live Graph
+GraphMemoryUpdater: Writable Live Graph
 Accepts raw text snippets and merges new entities/relationships into the live
 Neo4j graph without a full document re-ingest cycle.
-
-Inspired by MiroFish's zep_graph_memory_updater.py which dynamically updates
-the knowledge graph whenever a simulation agent takes an action.
 """
 
 from __future__ import annotations
@@ -123,7 +120,20 @@ class GraphMemoryUpdater:
             entity.valid_from = valid_from
             entity.tenant_id = tenant_id
             try:
+                # Check if exists to correctly categorize adds vs merges
+                rows = await self.store.execute_query(
+                    "MATCH (e:Entity {name: $name}) RETURN count(e) as c",
+                    {"name": entity.name}
+                )
+                exists = rows[0]["c"] > 0 if rows else False
+
                 await self.store.create_node(entity)
+                
+                if exists:
+                    entities_merged += 1
+                else:
+                    entities_added += 1
+                    
                 # Tag node with source provenance
                 await self.store.execute_query(
                     """
@@ -134,9 +144,8 @@ class GraphMemoryUpdater:
                     """,
                     {"name": entity.name, "label": source_label},
                 )
-                entities_added += 1
-            except Exception:
-                entities_merged += 1  # MERGE hit an existing node
+            except Exception as e:
+                pass  # Log exception in reality, but do NOT increment entities_merged here
 
         # Merge relationships
         for rel in extraction.relationships:

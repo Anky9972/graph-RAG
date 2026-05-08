@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
 from typing import List, Dict, Any, Optional
 
-from ..core.neo4j_store import Neo4jStore
-from ..retrieval.agent import AgentRetrievalSystem
-from ..ingestion.pipeline import IngestionPipeline
-from ..config import settings
-from ..api.models import *
-from ..api.auth import get_current_user
+from ...core.neo4j_store import Neo4jStore
+from ...retrieval.agent import AgentRetrievalSystem
+from ...ingestion.pipeline import IngestionPipeline
+from ...config import settings
+from ...api.models import *
+from ...api.auth import get_current_user, User
 import redis
 
 # Dependency injection for global state
@@ -24,7 +24,7 @@ def get_redis_client(request: Request) -> redis.Redis:
 
 router = APIRouter()
 
-from ..core.storage import get_storage
+from ...core.storage import get_storage
 storage = get_storage()
 
 @router.post("/api/documents/upload", response_model=DocumentUploadResponse, tags=["Documents"])
@@ -107,7 +107,7 @@ async def scrape_url(
     from bs4 import BeautifulSoup
     import markdownify
     import re
-    from ..ingestion.web_crawler import WebCrawler
+    from ...ingestion.web_crawler import WebCrawler
 
     try:
         import sys
@@ -176,7 +176,7 @@ async def crawl_urls(
     Advanced async Web Crawling using locally-hosted Crawl4AI (Playwright).
     This extracts clean Markdown format and queues items into Celery for Graph ingestion.
     """
-    from ..ingestion.web_crawler import WebCrawler
+    from ...ingestion.web_crawler import WebCrawler
     import re
     import hashlib
     

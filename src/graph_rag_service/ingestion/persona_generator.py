@@ -1,5 +1,5 @@
 """
-MiroFish Point #2: The Ontology-to-Persona Pipeline
+The Ontology-to-Persona Pipeline
 Takes generic entities from the Neo4j Graph (like 'Person' or 'Organization')
 and uses local LLMs to generate deep psychological, demographic, and background profiles,
 saving them back as 'Persona' extensions in the graph.
@@ -36,12 +36,12 @@ class PersonaGenerator:
         generates the persona, and updates the graph.
         """
         # Get entities without a persona profile
-        query = f"""
-        MATCH (e:Entity {{type: '{entity_type}'}})
+        query = """
+        MATCH (e:Entity {type: $entity_type})
         WHERE e.persona Is NULL
         RETURN e.id AS id, e.name AS name, e.properties AS properties
         """
-        entities = await self.store.execute_query(query)
+        entities = await self.store.execute_query(query, {"entity_type": entity_type})
         count = 0
         
         for record in entities:

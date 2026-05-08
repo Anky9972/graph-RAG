@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Message, Conversation, DocumentInfo, GraphNode } from '../types/api';
 import {
   MessageSquare, Send, Bot, User as UserIcon, Zap,
   Menu, Info, X, ChevronDown, FileText, Plus
@@ -21,19 +22,19 @@ const InteractionView: React.FC = () => {
 
   // ── Core chat state ──────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
-  const [conversation, setConversation] = useState<any[]>([]);
+  const [conversation, setConversation] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
   // ── Document / mode state ────────────────────────────────────────────────
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [selectedDocId, setSelectedDocId] = useState('');
   const [useGot, setUseGot] = useState(false);
   const [mode, setMode] = useState<'rag' | 'simulation'>('rag');
   const [agentId, setAgentId] = useState('');
-  const [agentNodes, setAgentNodes] = useState<any[]>([]);
+  const [agentNodes, setAgentNodes] = useState<GraphNode[]>([]);
 
   // ── Thread history ────────────────────────────────────────────────────────
-  const [pastConversations, setPastConversations] = useState<any[]>([]);
+  const [pastConversations, setPastConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
   // ── UI state ──────────────────────────────────────────────────────────────

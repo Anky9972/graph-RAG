@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { GraphNode, GraphEdge, DocumentInfo } from '../types/api';
 import GraphCanvas, { DEFAULT_OPTIONS } from '../components/GraphCanvas';
 import type { GraphOptions, GraphCanvasHandle } from '../components/GraphCanvas';
 import {
@@ -18,10 +19,10 @@ const TYPE_COLORS = [
 
 const SimulationRunView: React.FC = () => {
   const { token, logout } = useAuth();
-  const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] }>({ nodes: [], edges: [] });
+  const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(false);
   const [limit, setLimit] = useState(100);
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [selectedDocId, setSelectedDocId] = useState('');
   const [nodeCount, setNodeCount] = useState(0);
   const [edgeCount, setEdgeCount] = useState(0);

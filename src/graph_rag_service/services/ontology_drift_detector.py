@@ -77,7 +77,7 @@ class OntologyDriftDetector:
             return None
 
         proposed = await self.generator.generate_initial_ontology(chunks)
-        report = self._compute_diff(current, proposed, sample_size)
+        report = await self._compute_diff(current, proposed, sample_size)
 
         # Persist to Neo4j
         await self._save_drift_report(report)
@@ -108,7 +108,7 @@ class OntologyDriftDetector:
             set(current.relationship_types) | set(report.new_relationship_types)
         )
 
-        bump = self._bump_version(current.version)
+        bump = self._bump_version(current.version, report.drift_score)
         new_ontology = OntologySchema(
             version=bump,
             entity_types=sorted(updated_entities),
@@ -207,28 +207,47 @@ class OntologyDriftDetector:
             )
         return chunks
 
-    def _compute_diff(
+    async def _compute_diff(
         self,
         current: OntologySchema,
         proposed: OntologySchema,
         sample_size: int,
     ) -> DriftReport:
+        import difflib
+
         current_e = set(current.entity_types)
         current_r = set(current.relationship_types)
         proposed_e = set(proposed.entity_types)
         proposed_r = set(proposed.relationship_types)
 
-        new_e = list(proposed_e - current_e)
-        new_r = list(proposed_r - current_r)
-        removed_e = list(current_e - proposed_e)
-        removed_r = list(current_r - proposed_r)
+        # Fuzzy match function to detect pure semantic overlaps
+        def get_unmatched(source_set, target_set, threshold=0.8):
+            unmatched = set(source_set)
+            for s_item in source_set:
+                for t_item in target_set:
+                    # Check semantic string similarity
+                    ratio = difflib.SequenceMatcher(None, s_item.lower(), t_item.lower()).ratio()
+                    if ratio >= threshold:
+                        if s_item in unmatched:
+                            unmatched.remove(s_item)
+                        break
+            return list(unmatched)
 
-        total_current = len(current_e) + len(current_r)
-        total_changed = len(new_e) + len(new_r) + len(removed_e) + len(removed_r)
-        drift_score = (
-            round(total_changed / max(total_current, 1), 3)
-            if total_current > 0 else 0.0
-        )
+        # Use fuzzy matching instead of strict exact set difference
+        new_e = get_unmatched(proposed_e, current_e)
+        new_r = get_unmatched(proposed_r, current_r)
+        
+        # Check what we truly removed (it's not in the new proposed set)
+        removed_e = get_unmatched(current_e, proposed_e)
+        removed_r = get_unmatched(current_r, proposed_r)
+
+        # 1 point for minor fuzzy changes, but use LLM semantic metric ideally
+        # Weighted drift formula that is not diluted completely by large ontology sizes:
+        # A new concept should always represent a tangible static drift.
+        drift_raw_score = (len(new_e) * 1.0) + (len(new_r) * 1.5) + (len(removed_e) * 0.5)
+        # Bounded log-like scale (so score represents an absolute conceptual drift, maxing at 1.0)
+        import math
+        drift_score = min(1.0, round(float(math.log1p(drift_raw_score) / 4.0), 2))
 
         return DriftReport(
             new_entity_types=new_e,
@@ -320,13 +339,29 @@ class OntologyDriftDetector:
         )
 
     @staticmethod
-    def _bump_version(version: str) -> str:
-        """Increment the minor version number e.g. v1.0 → v1.1"""
+    def _bump_version(version: str, drift_score: float) -> str:
+        """Increment the semantic version based on drift score."""
         try:
             prefix, nums = version.split("v", 1)
             parts = nums.split(".")
-            if len(parts) >= 2:
-                parts[-1] = str(int(parts[-1]) + 1)
-            return "v" + ".".join(parts)
+            
+            # Make sure it corresponds to MAJOR.MINOR.PATCH
+            while len(parts) < 3:
+                parts.append("0")
+                
+            major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+            
+            # Use semantic thresholds to decide version jump
+            if drift_score >= 0.7:  # Severe semantic shift
+                major += 1
+                minor = 0
+                patch = 0
+            elif drift_score >= 0.3:  # Notible structural additions
+                minor += 1
+                patch = 0
+            else:  # Minor patches
+                patch += 1
+                
+            return f"v{major}.{minor}.{patch}"
         except Exception:
             return version + ".1"

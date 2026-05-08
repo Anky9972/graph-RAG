@@ -8,7 +8,7 @@ Every action taken by the LLM is pushed immediately as a temporal edge back into
 
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 
 from ..core.neo4j_store import Neo4jStore
@@ -98,8 +98,12 @@ class SimulationManager:
 
             # --- POINT 1: Dynamic Graph Evolution ---
             # Save the action back into our Neo4j Knowledge Graph as a temporal event edge
-            timestamp = datetime.utcnow().isoformat()
+            timestamp = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+            import re
             cypher_action = action.action_type.replace(" ", "_").upper()
+            cypher_action = re.sub(r'[^A-Z0-9_]', '', cypher_action)
+            if not cypher_action:
+                cypher_action = "INTERACTED_WITH"
             
             update_query = f"""
             MATCH (source:Entity {{id: $source_id}})

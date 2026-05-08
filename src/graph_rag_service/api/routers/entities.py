@@ -8,19 +8,7 @@ from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
 import redis
-
-# Dependency injection for global state
-def get_graph_store(request: Request) -> Neo4jStore:
-    return request.app.state.graph_store
-
-def get_retrieval_agent(request: Request) -> AgentRetrievalSystem:
-    return request.app.state.retrieval_agent
-
-def get_ingestion_pipeline(request: Request) -> IngestionPipeline:
-    return request.app.state.ingestion_pipeline
-
-def get_redis_client(request: Request) -> redis.Redis:
-    return request.app.state.redis_client
+from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 
 router = APIRouter()
 

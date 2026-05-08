@@ -4,7 +4,7 @@ LLM-powered automatic ontology discovery with versioning
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from ..core.models import OntologySchema, Chunk
@@ -94,7 +94,7 @@ Keep it simple but comprehensive."""
                 entity_types=ontology_data.get("entity_types", []),
                 relationship_types=ontology_data.get("relationship_types", []),
                 properties=ontology_data.get("properties", {}),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 approved=False
             )
             
@@ -108,7 +108,7 @@ Keep it simple but comprehensive."""
                 entity_types=["Entity", "Concept", "Person", "Organization"],
                 relationship_types=["RELATED_TO", "MENTIONS", "PART_OF"],
                 properties={},
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 approved=False
             )
     
@@ -182,7 +182,7 @@ Maintain backward compatibility when possible."""
                 entity_types=refined_data.get("entity_types", current_schema.entity_types),
                 relationship_types=refined_data.get("relationship_types", current_schema.relationship_types),
                 properties=refined_data.get("properties", current_schema.properties),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 approved=False
             )
             

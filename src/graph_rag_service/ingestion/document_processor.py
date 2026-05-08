@@ -8,7 +8,7 @@ import aiofiles
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import json
 
@@ -73,7 +73,7 @@ class DocumentProcessor:
             filename=file_path.name,
             file_type=file_path.suffix,
             size_bytes=file_path.stat().st_size,
-            upload_date=datetime.utcnow(),
+            upload_date=datetime.now(timezone.utc).replace(tzinfo=None),
             content=text,
             metadata={
                 "file_path": str(file_path),

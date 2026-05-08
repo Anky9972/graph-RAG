@@ -3,7 +3,7 @@ Core data models for Graph RAG Service
 Extended with: temporal fields, tenant support, eval/confidence models
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, List, Any, Literal
 from datetime import datetime
 from enum import Enum
@@ -48,8 +48,8 @@ class Entity(BaseModel):
     # Community support (Gap #2)
     community_id: Optional[int] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Lyzr AI",
                 "type": "Company",
@@ -58,6 +58,7 @@ class Entity(BaseModel):
                 "tenant_id": "org_abc123"
             }
         }
+    )
 
 
 class Relationship(BaseModel):
@@ -76,8 +77,8 @@ class Relationship(BaseModel):
     # Tenant support (Gap #7)
     tenant_id: Optional[str] = None
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "source": "Lyzr AI",
                 "target": "OpenAI",
@@ -86,6 +87,7 @@ class Relationship(BaseModel):
                 "valid_from": "2023-01-01T00:00:00"
             }
         }
+    )
 
 
 class Chunk(BaseModel):

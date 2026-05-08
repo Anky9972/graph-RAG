@@ -209,7 +209,7 @@ def cleanup_orphan_nodes_task():
             # Delete Entity nodes with 0 relationships
             query = """
             MATCH (n:Entity)
-            WHERE COUNT { (n)--() } = 0
+            WHERE size((n)--()) = 0
             DELETE n
             RETURN count(n) as deleted_count
             """

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -161,7 +161,7 @@ class PanoramaSearchTool:
         WHERE e.type = $type OR $type = 'Entity'
         RETURN e.name as name, e.type as type,
                e.summary as summary,
-               COUNT { (e)--() } as degree
+               size((e)--()) as degree
         ORDER BY degree DESC
         LIMIT $limit
         """
@@ -551,7 +551,7 @@ Executive summary (concise, factual, highlight the most important finding):"""
     ) -> str:
         lines = [
             f"# Report: {topic}",
-            f"*Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}*\n",
+            f"*Generated: {datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M UTC')}*\n",
             "## Executive Summary",
             exec_summary,
             "",

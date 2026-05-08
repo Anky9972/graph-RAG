@@ -25,67 +25,21 @@ from .auth import (
     User,
     check_scope
 )
-from .models import (
-    LoginRequest,
-    RegisterRequest,
-    TokenResponse,
-    DocumentUploadResponse,
-    DocumentInfo,
-    DocumentListResponse,
-    QueryRequest,
-    QueryResponse,
-    ConfidenceJudgmentResponse,
-    OntologyResponse,
-    OntologyUpdateRequest,
-    OntologyRefineRequest,
-    OntologyRefineResponse,
-    SystemHealthResponse,
-    SystemStatsResponse,
-    IngestionStatusResponse,
-    GraphVisualizationResponse,
-    GraphNode,
-    GraphEdge,
-    DeduplicateResponse,
-    Message,
-    Conversation,
-    ConversationListResponse,
-    ScrapeRequest,
-    CrawlRequest,
-    EntityUpdateRequest,
-    # New models (Gap #8, #2, #9)
-    EvalRequest,
-    EvalResponse,
-    EvalDashboardResponse,
-    EvalTrendPoint,
-    CommunityAssignResponse,
-    CommunitySummaryResponse,
-    SupportedFormatsResponse,
-    # MiroFish integration models
-    GraphUpdateRequest,
-    GraphUpdateResponse,
-    EnrichmentStatusResponse,
-    EntitySummaryResponse,
-    ReportRequest,
-    ReportResponse,
-    EntityChatRequest,
-    EntityChatResponse,
-    DriftReportResponse,
-    DriftListResponse,
+from .auth import (
+    get_current_user,
+    create_access_token,
+    verify_password,
+    get_password_hash,
+    User,
+    check_scope
 )
 
 from ..config import settings
 from ..core.neo4j_store import Neo4jStore
 from ..retrieval.agent import AgentRetrievalSystem
-from ..retrieval.report_agent import ReportAgent
+from ..retrieval.agent import AgentRetrievalSystem
 from ..ingestion.pipeline import IngestionPipeline
-from ..ingestion.ontology_generator import OntologyGenerator
-from ..core.entity_resolver import SemanticEntityResolver
-from ..core.llm_factory import LLMFactory, UnifiedLLMProvider
 from ..core.storage import get_storage
-from ..workers.celery_worker import celery_app, ingest_document_task
-from ..services.graph_memory_updater import GraphMemoryUpdater
-from ..services.entity_enricher import EntityEnricher
-from ..services.ontology_drift_detector import OntologyDriftDetector
 from . import admin
 from .simulation import router as simulation_router
 
@@ -104,7 +58,16 @@ app.include_router(simulation_router)
 # Allowed origins are driven by the CORS_ORIGINS env var (comma-separated list).
 # Defaults to localhost only. Set appropriately for production.
 _raw_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
-_allowed_origins: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+import re
+def is_valid_origin(origin: str) -> bool:
+    if origin == "*": return True
+    # Basic URL validation regex for CORS origins (scheme://host[:port])
+    pattern = re.compile(r"^https?://[a-zA-Z0-9.-]+(:\d+)?$")
+    return bool(pattern.match(origin))
+
+_allowed_origins: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip() and is_valid_origin(o.strip())]
+if not _allowed_origins:
+    _allowed_origins = ["http://localhost:3000"]
 _is_wildcard = "*" in _allowed_origins
 
 app.add_middleware(

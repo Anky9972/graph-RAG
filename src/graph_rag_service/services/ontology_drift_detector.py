@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field
@@ -114,7 +114,7 @@ class OntologyDriftDetector:
             entity_types=sorted(updated_entities),
             relationship_types=sorted(updated_rels),
             properties=current.properties,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
             approved=True,
         )
 
@@ -315,7 +315,7 @@ class OntologyDriftDetector:
             try:
                 detected_at = datetime.fromisoformat(detected_at)
             except Exception:
-                detected_at = datetime.utcnow()
+                detected_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         approved_at = r.get("approved_at")
         if isinstance(approved_at, str):
@@ -326,7 +326,7 @@ class OntologyDriftDetector:
 
         return DriftReport(
             id=r.get("id", str(uuid.uuid4())),
-            detected_at=detected_at or datetime.utcnow(),
+            detected_at=detected_at or datetime.now(timezone.utc).replace(tzinfo=None),
             new_entity_types=r.get("new_entity_types") or [],
             new_relationship_types=r.get("new_relationship_types") or [],
             removed_entity_types=r.get("removed_entity_types") or [],

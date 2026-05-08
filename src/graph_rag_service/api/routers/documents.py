@@ -8,19 +8,7 @@ from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
 import redis
-
-# Dependency injection for global state
-def get_graph_store(request: Request) -> Neo4jStore:
-    return request.app.state.graph_store
-
-def get_retrieval_agent(request: Request) -> AgentRetrievalSystem:
-    return request.app.state.retrieval_agent
-
-def get_ingestion_pipeline(request: Request) -> IngestionPipeline:
-    return request.app.state.ingestion_pipeline
-
-def get_redis_client(request: Request) -> redis.Redis:
-    return request.app.state.redis_client
+from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 
 router = APIRouter()
 
@@ -43,6 +31,28 @@ async def upload_document(request: Request,
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File type {file_extension} not allowed. Allowed types: {settings.allowed_file_types}"
+        )
+
+    # Validate MIME type using python-magic
+    import magic
+    file_header = await file.read(2048)
+    await file.seek(0)
+    mime_type = magic.from_buffer(file_header, mime=True)
+    
+    # Basic mapping of extension to MIME types for allowed_file_types
+    allowed_mimes = {
+        ".pdf": ["application/pdf"],
+        ".txt": ["text/plain"],
+        ".md": ["text/plain", "text/markdown"],
+        ".csv": ["text/csv", "text/plain"],
+        ".xlsx": ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+        ".pptx": ["application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+    }
+    
+    if file_extension in allowed_mimes and mime_type not in allowed_mimes[file_extension]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File content ({mime_type}) does not match extension {file_extension}"
         )
 
     # SECURITY: sanitize filename to prevent path traversal (e.g. "../../../etc/passwd")

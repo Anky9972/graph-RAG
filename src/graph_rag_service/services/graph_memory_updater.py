@@ -7,7 +7,7 @@ Neo4j graph without a full document re-ingest cycle.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -75,7 +75,7 @@ class GraphMemoryUpdater:
         if not text or not text.strip():
             return GraphUpdateResult(message="Empty text — nothing to update")
 
-        valid_from = valid_from or datetime.utcnow()
+        valid_from = valid_from or datetime.now(timezone.utc).replace(tzinfo=None)
         tenant_id = tenant_id or settings.default_tenant_id
 
         # Load ontology (needed by extractor for entity type validation)
@@ -122,8 +122,8 @@ class GraphMemoryUpdater:
             try:
                 # Check if exists to correctly categorize adds vs merges
                 rows = await self.store.execute_query(
-                    "MATCH (e:Entity {name: $name}) RETURN count(e) as c",
-                    {"name": entity.name}
+                    "MATCH (e:Entity {name: $name, tenant_id: $tenant_id}) RETURN count(e) as c",
+                    {"name": entity.name, "tenant_id": entity.tenant_id}
                 )
                 exists = rows[0]["c"] > 0 if rows else False
 
@@ -137,12 +137,12 @@ class GraphMemoryUpdater:
                 # Tag node with source provenance
                 await self.store.execute_query(
                     """
-                    MATCH (e:Entity {name: $name})
+                    MATCH (e:Entity {name: $name, tenant_id: $tenant_id})
                     SET e.source_label = $label,
                         e.update_count = coalesce(e.update_count, 0) + 1,
                         e.last_updated = datetime()
                     """,
-                    {"name": entity.name, "label": source_label},
+                    {"name": entity.name, "tenant_id": entity.tenant_id, "label": source_label},
                 )
             except Exception as e:
                 pass  # Log exception in reality, but do NOT increment entities_merged here

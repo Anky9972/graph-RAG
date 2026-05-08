@@ -147,6 +147,9 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 100
     upload_dir: Path = Path("data/uploads").resolve()
 
+    # Frontend Path
+    frontend_dist_dir: Path = Path("../frontend-react/dist").resolve()
+
     # Observability
     enable_tracing: bool = False
     enable_metrics: bool = False

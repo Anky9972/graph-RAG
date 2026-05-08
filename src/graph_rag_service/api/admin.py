@@ -236,13 +236,24 @@ async def get_pending_ontology(
     return {"proposals": res}
 
 @router.post("/ontology/approve/{prop_id}", summary="Approve ontology type")
-async def approve_ontology(prop_id: str, admin_user: User = Depends(check_admin_scope)):
-    # Actual implementation updates Neo4j schema logic
+async def approve_ontology(
+    prop_id: str, 
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store)
+):
+    cypher = "MATCH (o:OntologyProposal {id: $prop_id}) SET o.status = 'approved' RETURN o"
+    await store.execute_query(cypher, {"prop_id": prop_id})
     return {"status": "approved", "id": prop_id}
 
 @router.post("/ontology/reject/{prop_id}", summary="Reject ontology type")
-async def reject_ontology(prop_id: str, admin_user: User = Depends(check_admin_scope)):
-     return {"status": "rejected", "id": prop_id}
+async def reject_ontology(
+    prop_id: str, 
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store)
+):
+    cypher = "MATCH (o:OntologyProposal {id: $prop_id}) SET o.status = 'rejected' RETURN o"
+    await store.execute_query(cypher, {"prop_id": prop_id})
+    return {"status": "rejected", "id": prop_id}
 
 # --- NEW USER MANAGEMENT ENDPOINTS ---
 
@@ -263,8 +274,14 @@ async def list_users(
     return {"users": res}
 
 @router.put("/users/{username}/role", summary="Update user role/scopes")
-async def update_user_role(username: str, payload: dict, admin_user: User = Depends(check_admin_scope)):
+async def update_user_role(
+    username: str, 
+    payload: dict, 
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store)
+):
     scopes = payload.get("scopes", [])
-    # Cypher to update user in Neo4j
+    cypher = "MATCH (u:User {username: $username}) SET u.scopes = $scopes RETURN u"
+    await store.execute_query(cypher, {"username": username, "scopes": scopes})
     return {"status": "success", "username": username, "new_scopes": scopes}
 

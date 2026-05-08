@@ -8,19 +8,7 @@ from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
 import redis
-
-# Dependency injection for global state
-def get_graph_store(request: Request) -> Neo4jStore:
-    return request.app.state.graph_store
-
-def get_retrieval_agent(request: Request) -> AgentRetrievalSystem:
-    return request.app.state.retrieval_agent
-
-def get_ingestion_pipeline(request: Request) -> IngestionPipeline:
-    return request.app.state.ingestion_pipeline
-
-def get_redis_client(request: Request) -> redis.Redis:
-    return request.app.state.redis_client
+from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 
 router = APIRouter()
 
@@ -38,13 +26,18 @@ async def register(request: RegisterRequest):
         )
     
     hashed_password = get_password_hash(request.password)
+    # SECURITY: Prevent unauthorized admin registration
+    safe_scopes = [s for s in request.scopes if s != "admin"]
+    if not safe_scopes:
+        safe_scopes = ["read", "write"]
+
     user_data = {
         "username": request.username,
         "hashed_password": hashed_password,
         "email": request.email,
         "full_name": request.full_name,
         "disabled": False,
-        "scopes": request.scopes
+        "scopes": safe_scopes
     }
     
     await request.app.state.graph_store.create_user(user_data)
@@ -54,7 +47,7 @@ async def register(request: RegisterRequest):
         email=request.email,
         full_name=request.full_name,
         disabled=False,
-        scopes=request.scopes
+        scopes=safe_scopes
     )
 
 

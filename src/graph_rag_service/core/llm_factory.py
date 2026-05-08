@@ -13,6 +13,10 @@ from llama_index.llms.anthropic import Anthropic
 from llama_index.llms.gemini import Gemini
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
+try:
+    from llama_index.embeddings.gemini import GeminiEmbedding
+except ImportError:
+    pass
 from llama_index.core.llms import ChatMessage
 
 from .abstractions import LLMProvider
@@ -181,15 +185,14 @@ Only return the JSON object, no additional text.
         embed_provider = settings.embedding_provider
         
         if embed_provider == "gemini":
+            embedder = GeminiEmbedding(
+                model_name="models/gemini-embedding-001",
+                api_key=settings.google_api_key
+            )
             last_error = None
             for attempt in range(6):
                 try:
-                    result = genai.embed_content(
-                        model="models/gemini-embedding-001",
-                        content=text,
-                        task_type="retrieval_document",
-                    )
-                    return result["embedding"]
+                    return await embedder.aget_text_embedding(text)
                 except Exception as e:
                     last_error = e
                     if "429" in str(e) or "quota" in str(e).lower():
@@ -226,31 +229,23 @@ Only return the JSON object, no additional text.
         embed_provider = settings.embedding_provider
         
         if embed_provider == "gemini":
-            embeddings = []
-            for text in texts:
-                last_error = None
-                for attempt in range(6):
-                    try:
-                        result = genai.embed_content(
-                            model="models/gemini-embedding-001",
-                            content=text,
-                            task_type="retrieval_document",
-                        )
-                        embeddings.append(result["embedding"])
-                        await asyncio.sleep(0.5)  # More gentle rate limiting
-                        break
-                    except Exception as e:
-                        last_error = e
-                        if "429" in str(e) or "quota" in str(e).lower():
-                            delay = 5 * (2 ** attempt)
-                            print(f"Embedding rate limited, retrying in {delay}s...")
-                            await asyncio.sleep(delay)
-                        else:
-                            raise
-                if last_error and len(embeddings) < len(texts):
-                    # If we exhausted retries for this chunk, fail
-                    raise last_error
-            return embeddings
+            embedder = GeminiEmbedding(
+                model_name="models/gemini-embedding-001",
+                api_key=settings.google_api_key
+            )
+            last_error = None
+            for attempt in range(6):
+                try:
+                    return await embedder.aget_text_embedding_batch(texts)
+                except Exception as e:
+                    last_error = e
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        delay = 5 * (2 ** attempt)
+                        print(f"Embedding rate limited, retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise
+            raise last_error
         
         elif embed_provider == "ollama":
             if not self.embedder:

@@ -30,4 +30,4 @@ jobs:
           git checkout -b main
           git add .
           git commit -m "Automated sync to Hugging Face"
-          git push --force https://anky2002:$HF_TOKEN@huggingface.co/spaces/anky2002/graph-rag main
+          git push --force https://anky2002:$HF_TOKEN@huggingface.co/spaces/anky2002/graph-rag main 

@@ -58,7 +58,7 @@ class Neo4jStore(GraphStore, VectorStore):
     # ── Index creation ────────────────────────────────────────────────────────
 
     async def _create_vector_index(self) -> None:
-        """Create vector index for semantic search"""
+        """Create vector index for semantic search and semantic caching"""
         query = """
         CREATE VECTOR INDEX chunk_embeddings IF NOT EXISTS
         FOR (c:Chunk)
@@ -71,6 +71,18 @@ class Neo4jStore(GraphStore, VectorStore):
         async with self.driver.session(database=self.database) as session:
             try:
                 await session.run(query, dimension=settings.embedding_dimension)
+                
+                # Gap #6: Semantic Query Cache Index
+                cache_query = """
+                CREATE VECTOR INDEX query_cache_embeddings IF NOT EXISTS
+                FOR (q:QueryCache)
+                ON q.embedding
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: $dimension,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """
+                await session.run(cache_query, dimension=settings.embedding_dimension)
             except Exception as e:
                 print(f"Vector index creation: {e}")
 
@@ -204,39 +216,51 @@ class Neo4jStore(GraphStore, VectorStore):
         self,
         source: str,
         target: str,
-        max_depth: int = 3
+        max_depth: int = 3,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Find paths between two entities"""
-        query = """
-        MATCH path = (source:Entity {name: $source})-[*1..%d]-(target:Entity {name: $target})
-        RETURN [node in nodes(path) | {name: node.name, type: node.type}] as nodes,
+        tenant_filter = "WHERE source.tenant_id = $tenant_id" if tenant_id else ""
+        query = f"""
+        MATCH path = (source:Entity {{name: $source}})-[*1..{max_depth}]-(target:Entity {{name: $target}})
+        {tenant_filter}
+        RETURN [node in nodes(path) | {{name: node.name, type: node.type}}] as nodes,
                [rel in relationships(path) | type(rel)] as relationships,
                length(path) as length
         ORDER BY length
         LIMIT 5
-        """ % max_depth
+        """
 
         async with self.driver.session(database=self.database) as session:
-            result = await session.run(query, source=source, target=target)
+            params = {"source": source, "target": target}
+            if tenant_id:
+                params["tenant_id"] = tenant_id
+            result = await session.run(query, **params)
             paths = await result.data()
             return paths
 
     async def get_neighbors(
         self,
         entity_name: str,
-        depth: int = 1
+        depth: int = 1,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get neighboring entities"""
-        query = """
-        MATCH (e:Entity {name: $name})-[r*1..%d]-(neighbor:Entity)
+        tenant_filter = "WHERE e.tenant_id = $tenant_id" if tenant_id else ""
+        query = f"""
+        MATCH (e:Entity {{name: $name}})-[r*1..{depth}]-(neighbor:Entity)
+        {tenant_filter}
         RETURN DISTINCT neighbor.name as name,
                neighbor.type as type,
                neighbor.properties as properties
         LIMIT 50
-        """ % depth
+        """
 
         async with self.driver.session(database=self.database) as session:
-            result = await session.run(query, name=entity_name)
+            params = {"name": entity_name}
+            if tenant_id:
+                params["tenant_id"] = tenant_id
+            result = await session.run(query, **params)
             neighbors = await result.data()
             return neighbors
 
@@ -274,37 +298,32 @@ class Neo4jStore(GraphStore, VectorStore):
         self,
         query_text: str,
         k: int = 10,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         BM25 fulltext (Lucene) search over chunk text.
         Returns results with BM25 score for RRF fusion.
         """
+        doc_filter = "node.document_id = $doc_id AND " if document_id else ""
+        tenant_filter = "node.tenant_id = $tenant_id AND " if tenant_id else ""
+
+        cypher = f"""
+        CALL db.index.fulltext.queryNodes('chunk_text_index', $query)
+        YIELD node, score
+        WHERE {doc_filter}{tenant_filter}score > 0
+        RETURN node.id as id,
+               node.text as text,
+               node.document_id as document_id,
+               node.chunk_index as chunk_index,
+               score
+        LIMIT $k
+        """
+        params = {"query": query_text, "k": k}
         if document_id:
-            cypher = """
-            CALL db.index.fulltext.queryNodes('chunk_text_index', $query)
-            YIELD node, score
-            WHERE node.document_id = $doc_id
-            RETURN node.id as id,
-                   node.text as text,
-                   node.document_id as document_id,
-                   node.chunk_index as chunk_index,
-                   score
-            LIMIT $k
-            """
-            params = {"query": query_text, "doc_id": document_id, "k": k}
-        else:
-            cypher = """
-            CALL db.index.fulltext.queryNodes('chunk_text_index', $query)
-            YIELD node, score
-            RETURN node.id as id,
-                   node.text as text,
-                   node.document_id as document_id,
-                   node.chunk_index as chunk_index,
-                   score
-            LIMIT $k
-            """
-            params = {"query": query_text, "k": k}
+            params["doc_id"] = document_id
+        if tenant_id:
+            params["tenant_id"] = tenant_id
 
         try:
             async with self.driver.session(database=self.database) as session:
@@ -314,6 +333,7 @@ class Neo4jStore(GraphStore, VectorStore):
         except Exception as e:
             print(f"BM25 search error: {e}")
             return []
+
 
     # ── Gap #2: Community Detection ───────────────────────────────────────────
 
@@ -369,69 +389,40 @@ class Neo4jStore(GraphStore, VectorStore):
 
     async def assign_community_ids(self) -> int:
         """
-        Simple community assignment using connected components (WCC).
-        Each disconnected entity cluster gets a unique community_id.
-        This is a lightweight substitute for Louvain when Neo4j GDS is not available.
+        Server-side community assignment using Neo4j GDS Weakly Connected Components (WCC).
+        Replaces the in-memory Python Union-Find which crashes on large graphs.
         Returns number of communities found.
         """
-        # Use in-memory approach: find all entity pairs via relationships
-        # and assign sequential community IDs using Union-Find
-        all_entities_query = "MATCH (e:Entity) RETURN e.name as name, e.id as id"
-        all_rels_query = """
-        MATCH (a:Entity)-[r]-(b:Entity)
-        RETURN a.name as a, b.name as b
-        """
         try:
-            entities = await self.execute_query(all_entities_query)
-            rels = await self.execute_query(all_rels_query)
-
-            if not entities:
-                return 0
-
-            # Union-Find
-            parent: Dict[str, str] = {e["name"]: e["name"] for e in entities}
-
-            def find(x: str) -> str:
-                while parent[x] != x:
-                    parent[x] = parent[parent[x]]
-                    x = parent[x]
-                return x
-
-            def union(a: str, b: str):
-                ra, rb = find(a), find(b)
-                if ra != rb:
-                    parent[ra] = rb
-
-            for rel in rels:
-                if rel["a"] in parent and rel["b"] in parent:
-                    union(rel["a"], rel["b"])
-
-            # Map root → community int id
-            root_to_id: Dict[str, int] = {}
-            counter = 0
-            entity_community: Dict[str, int] = {}
-            for e in entities:
-                root = find(e["name"])
-                if root not in root_to_id:
-                    root_to_id[root] = counter
-                    counter += 1
-                entity_community[e["name"]] = root_to_id[root]
-
-            # Write community_ids back to Neo4j in batches
-            batch_size = 100
-            items = list(entity_community.items())
-            for i in range(0, len(items), batch_size):
-                batch = [{"name": n, "cid": c} for n, c in items[i:i + batch_size]]
-                update_query = """
-                UNWIND $batch as item
-                MATCH (e:Entity {name: item.name})
-                SET e.community_id = item.cid
-                """
-                await self.execute_query(update_query, {"batch": batch})
-
-            return counter
+            # 1. Ensure any old projection is dropped
+            await self.execute_query("CALL gds.graph.drop('community_graph', false) YIELD graphName")
+            
+            # 2. Project current graph
+            await self.execute_query('''
+                CALL gds.graph.project(
+                    'community_graph',
+                    'Entity',
+                    {
+                        '*': {
+                            orientation: 'UNDIRECTED'
+                        }
+                    }
+                ) YIELD graphName
+            ''')
+            
+            # 3. Run WCC algorithm and write results directly to nodes
+            write_result = await self.execute_query('''
+                CALL gds.wcc.write('community_graph', { writeProperty: 'community_id' })
+                YIELD componentCount
+            ''')
+            component_count = write_result[0]['componentCount'] if write_result else 0
+            
+            # 4. Clean up projection
+            await self.execute_query("CALL gds.graph.drop('community_graph', false) YIELD graphName")
+            
+            return component_count
         except Exception as e:
-            print(f"Community assignment error: {e}")
+            print(f"Community assignment error (requires Neo4j GDS plugin): {e}")
             return 0
 
     # ── Gap #5: Temporal queries ──────────────────────────────────────────────
@@ -510,12 +501,15 @@ class Neo4jStore(GraphStore, VectorStore):
         self,
         query_vector: List[float],
         k: int = 5,
-        filter: Optional[Dict[str, Any]] = None
+        filter: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Vector similarity search using Neo4j vector index"""
-        base_query = """
+        tenant_filter = "WHERE node.tenant_id = $tenant_id" if tenant_id else ""
+        base_query = f"""
         CALL db.index.vector.queryNodes('chunk_embeddings', $k, $query_vector)
         YIELD node, score
+        {tenant_filter}
         RETURN node.id as id,
                node.text as text,
                node.document_id as document_id,
@@ -527,11 +521,11 @@ class Neo4jStore(GraphStore, VectorStore):
 
         try:
             async with self.driver.session(database=self.database) as session:
-                result = await session.run(
-                    base_query,
-                    query_vector=query_vector,
-                    k=k
-                )
+                params = {"query_vector": query_vector, "k": k}
+                if tenant_id:
+                    params["tenant_id"] = tenant_id
+                    
+                result = await session.run(base_query, **params)
                 results = await result.data()
                 # Apply client-side filter if provided
                 if filter and results:
@@ -666,6 +660,44 @@ class Neo4jStore(GraphStore, VectorStore):
         LIMIT $limit
         """
         return await self.execute_query(query, {"limit": limit})
+
+    # ── Gap #6: Semantic Query Cache ──────────────────────────────────────────
+
+    async def get_semantic_cache(self, query_embedding: List[float], threshold: float = 0.95) -> Optional[str]:
+        """Find a semantically identical query in the cache"""
+        query = """
+        CALL db.index.vector.queryNodes('query_cache_embeddings', 1, $embedding)
+        YIELD node, score
+        WHERE score >= $threshold
+        RETURN node.answer as answer
+        """
+        try:
+            results = await self.execute_query(query, {"embedding": query_embedding, "threshold": threshold})
+            if results:
+                return results[0]["answer"]
+        except Exception as e:
+            print(f"Semantic cache retrieval error: {e}")
+        return None
+
+    async def set_semantic_cache(self, original_query: str, answer: str, query_embedding: List[float]) -> None:
+        """Store a query answer in the semantic cache"""
+        query = """
+        CREATE (q:QueryCache {
+            id: randomUUID(),
+            query: $original_query,
+            answer: $answer,
+            embedding: $embedding,
+            created_at: datetime()
+        })
+        """
+        try:
+            await self.execute_query(query, {
+                "original_query": original_query,
+                "answer": answer,
+                "embedding": query_embedding
+            })
+        except Exception as e:
+            print(f"Semantic cache storage error: {e}")
 
     # ── Chunk + entity helpers ────────────────────────────────────────────────
 

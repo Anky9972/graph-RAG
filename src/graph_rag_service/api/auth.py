@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -118,12 +118,14 @@ def decode_token(token: str) -> TokenData:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> User:
     """
     Get current user from JWT token
     
     Args:
+        request: FastAPI Request to access app state
         credentials: Authorization credentials from header
         
     Returns:
@@ -135,11 +137,22 @@ async def get_current_user(
     token = credentials.credentials
     token_data = decode_token(token)
     
-    # In production, fetch user from database
-    # For now, return a mock user
+    store = getattr(request.app.state, "graph_store", None)
+    if not store:
+        raise HTTPException(status_code=503, detail="Graph store unavailable")
+        
+    user_data = await store.get_user(token_data.username)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     user = User(
-        username=token_data.username,
-        scopes=token_data.scopes
+        username=user_data["username"],
+        scopes=user_data.get("scopes", []),
+        disabled=user_data.get("disabled", False)
     )
     
     if user.disabled:

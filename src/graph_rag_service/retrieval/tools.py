@@ -58,7 +58,7 @@ class HybridSearchTool:
         # Run both searches in parallel
         query_embedding = await self.llm.embed(query)
 
-        bm25_task = self.store.bm25_search(query, k=search_k, document_id=document_id)
+        bm25_task = self.store.bm25_search(query, k=search_k, document_id=document_id, tenant_id=tenant_id)
         vector_task = self.store.search(
             query_vector=query_embedding,
             k=search_k,
@@ -207,7 +207,7 @@ class CommunitySummaryTool:
             return []
 
         # Step 2: Get community groupings
-        communities = await self.store.get_communities(entity_names)
+        communities = await self.store.get_communities(entity_names, tenant_id=tenant_id)
         if not communities:
             return []
 
@@ -331,9 +331,9 @@ class GraphTraversalTool:
                 source_entity = source_entity or entities[0]
 
         if source_entity and target_entity:
-            results = await self.store.find_path(source_entity, target_entity, depth)
+            results = await self.store.find_path(source_entity, target_entity, depth, tenant_id=tenant_id)
         elif source_entity:
-            results = await self.store.get_neighbors(source_entity, depth)
+            results = await self.store.get_neighbors(source_entity, depth, tenant_id=tenant_id)
         else:
             results = []
 
@@ -383,7 +383,7 @@ class CypherGenerationTool:
         self.name = "cypher_query"
         self.description = "Generate and execute Cypher queries for complex structured graph queries"
 
-    async def run(self, query: str) -> List[Dict[str, Any]]:
+    async def run(self, query: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         cypher = await self._generate_cypher(query)
         if not cypher:
             return []
@@ -509,10 +509,17 @@ class MetadataFilterTool:
         filters: Dict[str, Any],
         limit: int = 20
     ) -> List[Dict[str, Any]]:
+        import re as _re
+        # SECURITY: allowlist property key characters to prevent Cypher injection.
+        # Keys must match Neo4j property naming rules: letters, digits, underscores only.
+        _SAFE_KEY = _re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
         where_clauses = []
         params: Dict[str, Any] = {}
 
         for i, (key, value) in enumerate(filters.items()):
+            if not _SAFE_KEY.match(key):
+                # Skip keys that don't match the allowlist — never interpolate them
+                continue
             param_name = f"param_{i}"
             if isinstance(value, list):
                 where_clauses.append(f"n.{key} IN ${param_name}")
@@ -829,11 +836,22 @@ class EntitySummarySearchTool:
         # Strategy 2: Fallback — keyword match on entity names in graph
         if not results:
             try:
-                words = [w for w in query.split() if len(w) > 3][:5]
+                import re as _re
+                # SECURITY: sanitize each word before string-interpolating into Cypher.
+                # Only keep alphanumeric / hyphen / underscore chars to prevent injection.
+                _safe_word = _re.compile(r"^[\w\-]+$")
+                words = [
+                    w for w in query.split()
+                    if len(w) > 3 and _safe_word.match(w)
+                ][:5]
                 if words:
-                    conditions = " OR ".join(
-                        f"toLower(e.name) CONTAINS toLower('{w}')" for w in words
-                    )
+                    # Use parameterised toLower comparison — one param per word
+                    conditions_parts = []
+                    for j, w in enumerate(words):
+                        p = f"word_{j}"
+                        conditions_parts.append(f"toLower(e.name) CONTAINS ${p}")
+                        params[p] = w.lower()
+                    conditions = " OR ".join(conditions_parts)
                     fallback_cypher = f"""
                     MATCH (e:Entity)
                     WHERE ({conditions}) AND e.summary IS NOT NULL AND e.summary <> ''

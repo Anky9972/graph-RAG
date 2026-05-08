@@ -79,16 +79,24 @@ chmod +x start-worker.sh
 uv run celery -A src.graph_rag_service.workers.celery_worker worker --loglevel=info
 ```
 
-## Step 6: Start the Streamlit Frontend
+## Step 6: Start the React Frontend
 
 In a **new terminal**:
 
 ```bash
-cd frontend
-uv run streamlit run app.py
+cd frontend-react
+
+# Install Node dependencies (first time only)
+npm install
+
+# Start the dev server
+npm run dev
 ```
 
-The Streamlit UI will open at `http://localhost:8501`
+The React UI will open at `http://localhost:5173`
+
+> **Note:** The project uses a **React/Vite** frontend (`frontend-react/`).  
+> There is no `streamlit run app.py` — any references to Streamlit in older docs are outdated.
 
 Login with: **username** `admin` / **password** `admin`
 

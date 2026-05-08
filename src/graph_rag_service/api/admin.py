@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from celery.result import AsyncResult
@@ -10,6 +10,21 @@ from ..core.neo4j_store import Neo4jStore
 from ..workers.celery_worker import celery_app
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Dashboard"])
+
+# ── Shared graph store dependency ─────────────────────────────────────────────
+# Admin routes must NOT create a fresh Neo4j driver per request — that causes
+# connection exhaustion and 50-200 ms of TCP handshake latency on every call.
+# Instead we pull the shared store that was initialised in the startup event.
+def get_graph_store(request: Request) -> Neo4jStore:
+    """Return the app-level shared Neo4jStore (set during startup)."""
+    store: Optional[Neo4jStore] = getattr(request.app.state, "graph_store", None)
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Graph store not initialised yet.",
+        )
+    return store
+
 
 # Re-use global objects by passing them explicitly if needed, 
 # for now we'll import and instantiate lightweight ones or use dependencies
@@ -35,11 +50,11 @@ class TaskDashboardResponse(BaseModel):
     failed_tasks: List[Dict[str, Any]]
 
 @router.get("/stats", summary="Get global admin statistics")
-async def get_admin_stats(admin_user: User = Depends(check_admin_scope)):
+async def get_admin_stats(
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
     """Get system-wide stats like document counts, node sizes, LLM costs (mocked for now)"""
-    store = Neo4jStore()
-    await store.connect()
-    
     try:
         # Get actual counts from Graph
         nodes_q = "MATCH (n) RETURN count(n) as count"
@@ -67,8 +82,8 @@ async def get_admin_stats(admin_user: User = Depends(check_admin_scope)):
                 "environment": settings.environment
             }
         }
-    finally:
-        await store.disconnect()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 @router.get("/tasks", summary="Get pending and active celery tasks")
 async def get_tasks(admin_user: User = Depends(check_admin_scope)):
@@ -100,25 +115,25 @@ async def update_config(config: SystemConfig, admin_user: User = Depends(check_a
     return {"status": "success", "message": f"Updated config to use {config.llm_provider}"}
 
 @router.get("/entities/review", summary="Get entities flagged for human review")
-async def get_review_queue(admin_user: User = Depends(check_admin_scope)):
+async def get_review_queue(
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
     """Fetch entities that resolved between 0.85-0.95 confidence"""
-    store = Neo4jStore()
-    await store.connect()
-    
-    try:
-        # Mocking finding entities with a specific flag
-        # You'd typically add a label :FlaggedForReview during ingestion
-        query = "MATCH (e:Entity) WHERE e.needs_review = true RETURN e.id as id, e.name as name LIMIT 50"
-        res = await store.execute_query(query)
-        return {"queue": res}
-    finally:
-        await store.disconnect()
+    # Mocking finding entities with a specific flag
+    # You'd typically add a label :FlaggedForReview during ingestion
+    query = "MATCH (e:Entity) WHERE e.needs_review = true RETURN e.id as id, e.name as name LIMIT 50"
+    res = await store.execute_query(query)
+    return {"queue": res}
 
 @router.post("/entities/merge", summary="Force merge two entities")
-async def force_merge_entities(source_id: str, target_id: str, admin_user: User = Depends(check_admin_scope)):
+async def force_merge_entities(
+    source_id: str,
+    target_id: str,
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
     """Admin override to merge two nodes"""
-    store = Neo4jStore()
-    await store.connect()
     try:
         query = '''
         MATCH (source:Entity {id: $source_id})
@@ -131,89 +146,94 @@ async def force_merge_entities(source_id: str, target_id: str, admin_user: User 
         return {"status": "merged", "result": res}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        await store.disconnect()
 
 # --- NEW GRAPH CRUD ENDPOINTS ---
 
 @router.get("/graph/nodes", summary="Search graph nodes for CRUD")
-async def search_nodes(query: str = "", limit: int = 50, admin_user: User = Depends(check_admin_scope)):
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        if query:
-            cypher = """
-            MATCH (n) 
-            WHERE any(prop in keys(n) WHERE toString(n[prop]) CONTAINS $query) OR head(labels(n)) CONTAINS $query
-            RETURN id(n) as id, labels(n) as labels, properties(n) as properties LIMIT $limit
-            """
-        else:
-            cypher = "MATCH (n) RETURN id(n) as id, labels(n) as labels, properties(n) as properties LIMIT $limit"
-        
-        res = await store.execute_query(cypher, {"query": query, "limit": limit})
-        return {"nodes": res}
-    finally:
-        await store.disconnect()
+async def search_nodes(
+    query: str = "",
+    limit: int = 50,
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    if query:
+        cypher = """
+        MATCH (n) 
+        WHERE any(prop in keys(n) WHERE toString(n[prop]) CONTAINS $query) OR head(labels(n)) CONTAINS $query
+        RETURN id(n) as id, labels(n) as labels, properties(n) as properties LIMIT $limit
+        """
+    else:
+        cypher = "MATCH (n) RETURN id(n) as id, labels(n) as labels, properties(n) as properties LIMIT $limit"
+    
+    res = await store.execute_query(cypher, {"query": query, "limit": limit})
+    return {"nodes": res}
 
 @router.delete("/graph/nodes/{node_id}", summary="Delete a node and its edges")
-async def delete_node(node_id: int, admin_user: User = Depends(check_admin_scope)):
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        cypher = "MATCH (n) WHERE id(n) = $node_id DETACH DELETE n"
-        await store.execute_query(cypher, {"node_id": node_id})
-        return {"status": "success", "message": f"Node {node_id} deleted."}
-    finally:
-        await store.disconnect()
+async def delete_node(
+    node_id: int,
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    # SECURITY: only allow deletion of content nodes — never User/system/OntologyMeta nodes.
+    _DELETABLE_LABELS = {"Entity", "Chunk", "Document", "OntologyProposal", "Community"}
+    # First fetch the node labels
+    label_q = "MATCH (n) WHERE id(n) = $node_id RETURN labels(n) as labels"
+    label_res = await store.execute_query(label_q, {"node_id": node_id})
+    if not label_res:
+        raise HTTPException(status_code=404, detail=f"Node {node_id} not found.")
+    node_labels = set(label_res[0].get("labels", []))
+    if not node_labels.intersection(_DELETABLE_LABELS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Deletion of node with labels {node_labels} is not permitted.",
+        )
+    cypher = "MATCH (n) WHERE id(n) = $node_id DETACH DELETE n"
+    await store.execute_query(cypher, {"node_id": node_id})
+    return {"status": "success", "message": f"Node {node_id} deleted."}
 
 # --- NEW DOCUMENT VAULT ENDPOINTS ---
 
 @router.get("/documents", summary="List all ingested documents")
-async def list_documents(admin_user: User = Depends(check_admin_scope)):
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        cypher = "MATCH (d:Document) RETURN d.id as id, d.filename as filename, d.status as status, d.uploaded_at as uploaded_at"
-        res = await store.execute_query(cypher)
-        return {"documents": res}
-    finally:
-        await store.disconnect()
+async def list_documents(
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    cypher = "MATCH (d:Document) RETURN d.id as id, d.filename as filename, d.status as status, d.uploaded_at as uploaded_at"
+    res = await store.execute_query(cypher)
+    return {"documents": res}
 
 @router.delete("/documents/{doc_id}", summary="Delete document and cascade graph chunks")
-async def delete_document(doc_id: str, admin_user: User = Depends(check_admin_scope)):
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        # Cascade delete logic in Neo4j (Mock representation based on typical structure)
-        cypher = """
-        MATCH (d:Document {id: $doc_id})
-        OPTIONAL MATCH (d)-[:CONTAINS]->(c:Chunk)
-        DETACH DELETE c, d
-        """
-        await store.execute_query(cypher, {"doc_id": doc_id})
-        return {"status": "success", "message": f"Document {doc_id} and components deleted."}
-    finally:
-        await store.disconnect()
+async def delete_document(
+    doc_id: str,
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    # Cascade delete logic in Neo4j
+    cypher = """
+    MATCH (d:Document {id: $doc_id})
+    OPTIONAL MATCH (d)-[:CONTAINS]->(c:Chunk)
+    DETACH DELETE c, d
+    """
+    await store.execute_query(cypher, {"doc_id": doc_id})
+    return {"status": "success", "message": f"Document {doc_id} and components deleted."}
 
 # --- NEW ONTOLOGY GOVERNANCE ENDPOINTS ---
 
 @router.get("/ontology/pending", summary="List pending ontology suggestions")
-async def get_pending_ontology(admin_user: User = Depends(check_admin_scope)):
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        # Mock finding pending ontology nodes
-        cypher = "MATCH (o:OntologyProposal) WHERE o.status = 'pending' RETURN o.id as id, o.type as type, o.name as name"
-        res = await store.execute_query(cypher)
-        # return dummy if empty for demo
-        if not res:
-            res = [
-                {"id": "prop1", "type": "Entity", "name": "ArtificialIntelligenceModel"},
-                {"id": "prop2", "type": "Relationship", "name": "OPTIMIZES_PERFORMANCE"}
-            ]
-        return {"proposals": res}
-    finally:
-        await store.disconnect()
+async def get_pending_ontology(
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    # Mock finding pending ontology nodes
+    cypher = "MATCH (o:OntologyProposal) WHERE o.status = 'pending' RETURN o.id as id, o.type as type, o.name as name"
+    res = await store.execute_query(cypher)
+    # return dummy if empty for demo
+    if not res:
+        res = [
+            {"id": "prop1", "type": "Entity", "name": "ArtificialIntelligenceModel"},
+            {"id": "prop2", "type": "Relationship", "name": "OPTIMIZES_PERFORMANCE"}
+        ]
+    return {"proposals": res}
 
 @router.post("/ontology/approve/{prop_id}", summary="Approve ontology type")
 async def approve_ontology(prop_id: str, admin_user: User = Depends(check_admin_scope)):
@@ -227,23 +247,20 @@ async def reject_ontology(prop_id: str, admin_user: User = Depends(check_admin_s
 # --- NEW USER MANAGEMENT ENDPOINTS ---
 
 @router.get("/users", summary="List all system users")
-async def list_users(admin_user: User = Depends(check_admin_scope)):
-    # Assuming local mock or Neo4j storage
-    store = Neo4jStore()
-    await store.connect()
-    try:
-        cypher = "MATCH (u:User) RETURN u.username as username, u.scopes as scopes, u.disabled as disabled"
-        res = await store.execute_query(cypher)
-        # Mock fallback if user node isn't implemented exactly this way
-        if not res:
-            res = [
-                {"username": "admin", "scopes": ["read", "write", "admin"], "disabled": False},
-                {"username": "analyst1", "scopes": ["read", "write"], "disabled": False},
-                {"username": "guest", "scopes": ["read"], "disabled": False}
-            ]
-        return {"users": res}
-    finally:
-        await store.disconnect()
+async def list_users(
+    admin_user: User = Depends(check_admin_scope),
+    store: Neo4jStore = Depends(get_graph_store),
+):
+    cypher = "MATCH (u:User) RETURN u.username as username, u.scopes as scopes, u.disabled as disabled"
+    res = await store.execute_query(cypher)
+    # Mock fallback if user node isn't implemented exactly this way
+    if not res:
+        res = [
+            {"username": "admin", "scopes": ["read", "write", "admin"], "disabled": False},
+            {"username": "analyst1", "scopes": ["read", "write"], "disabled": False},
+            {"username": "guest", "scopes": ["read"], "disabled": False}
+        ]
+    return {"users": res}
 
 @router.put("/users/{username}/role", summary="Update user role/scopes")
 async def update_user_role(username: str, payload: dict, admin_user: User = Depends(check_admin_scope)):

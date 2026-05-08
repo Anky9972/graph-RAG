@@ -20,7 +20,9 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Graph RAG Service"
-    app_version: str = "2.0.0"
+    # Version is kept in sync with pyproject.toml (the single source of truth).
+    # "2.0.0" was a documentation-only bump; the package version remains 0.1.0.
+    app_version: str = "0.1.0"
     debug: bool = False
     environment: str = "development"
 

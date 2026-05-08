@@ -49,6 +49,11 @@ dependencies = [
     "crawl4ai>=0.4.0",
     "markdownify>=1.2.2",
     "flower>=2.0.1",
+    # Missing runtime deps discovered in audit (referenced in code but absent from manifest)
+    "openpyxl>=3.1.0",          # xlsx parsing in ingestion pipeline
+    "python-pptx>=1.0.0",       # pptx parsing in ingestion pipeline
+    "beautifulsoup4>=4.12.0",   # HTML scraping fallback in scrape_url handler
+    "bcrypt>=4.0.0",            # used directly in auth.py (not via passlib)
 ]
 
 [project.optional-dependencies]

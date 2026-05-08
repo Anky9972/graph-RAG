@@ -51,14 +51,24 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+from celery.signals import worker_process_init
+
+_worker_loop = None
+
+@worker_process_init.connect
+def _init_worker_loop(**kwargs):
+    global _worker_loop
+    _worker_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_worker_loop)
+
 def run_async(coro):
-    """Helper to run async functions in Celery tasks"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+    """Helper to run async functions in Celery tasks using a persistent loop"""
+    global _worker_loop
+    if _worker_loop is not None:
+        return _worker_loop.run_until_complete(coro)
+    else:
+        # Fallback if not running in a Celery worker process (e.g. tests)
+        return asyncio.run(coro)
 
 
 @celery_app.task(name='ingest_document', bind=True)

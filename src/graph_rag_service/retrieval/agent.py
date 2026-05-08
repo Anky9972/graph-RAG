@@ -69,50 +69,39 @@ class AgentRetrievalSystem:
 
         self.graph = self._build_graph()
 
-    # ── Redis cache helpers (Gap #8) ──────────────────────────────────────────
-
-    async def _get_redis(self):
-        """Lazily initialize Redis connection"""
-        if self._redis is None and settings.enable_semantic_cache:
-            try:
-                import redis.asyncio as aioredis
-                self._redis = aioredis.from_url(settings.redis_url)
-            except Exception:
-                self._redis = None
-        return self._redis
+    # ── Neo4j Semantic Cache (Gap #6) ──────────────────────────────────────────
 
     async def _cache_get(self, query: str) -> Optional[Dict[str, Any]]:
         """Check semantic cache for a query result"""
         if not settings.enable_semantic_cache:
             return None
-        redis = await self._get_redis()
-        if not redis:
-            return None
         try:
-            cache_key = f"query_cache:{hashlib.sha256(query.lower().strip().encode()).hexdigest()}"
-            cached = await redis.get(cache_key)
-            if cached:
-                return json.loads(cached.decode("utf-8"))
-        except Exception:
-            pass
+            embedding = await self.llm.embed(query)
+            if not embedding:
+                return None
+            
+            cached_answer = await self.store.get_semantic_cache(embedding, threshold=0.95)
+            if cached_answer:
+                return {
+                    "answer": cached_answer,
+                    "sources": [],
+                    "reasoning_chain": ["[CACHE HIT] Retrieved from Neo4j semantic cache"],
+                    "confidence": 0.95
+                }
+        except Exception as e:
+            print(f"Semantic cache get error: {e}")
         return None
 
     async def _cache_set(self, query: str, result: Dict[str, Any]) -> None:
         """Store query result in semantic cache"""
         if not settings.enable_semantic_cache:
             return
-        redis = await self._get_redis()
-        if not redis:
-            return
         try:
-            cache_key = f"query_cache:{hashlib.sha256(query.lower().strip().encode()).hexdigest()}"
-            await redis.setex(
-                cache_key,
-                settings.cache_ttl_seconds,
-                json.dumps(result, default=str).encode("utf-8")
-            )
-        except Exception:
-            pass
+            embedding = await self.llm.embed(query)
+            if embedding and result.get("answer"):
+                await self.store.set_semantic_cache(query, result["answer"], embedding)
+        except Exception as e:
+            print(f"Semantic cache set error: {e}")
 
     # ── LangGraph workflow ────────────────────────────────────────────────────
 
@@ -122,6 +111,7 @@ class AgentRetrievalSystem:
         class State(TypedDict):
             query: str
             document_id: Optional[str]
+            tenant_id: Optional[str]
             decomposed_queries: List[str]
             contexts: List[Dict[str, Any]]
             reasoning_steps: List[str]
@@ -186,6 +176,7 @@ class AgentRetrievalSystem:
         document_id: Optional[str] = None,
         streaming: bool = False,
         use_got: bool = False,
+        tenant_id: Optional[str] = None,
     ) -> QueryResult:
         start_time = time.time()
         top_k = top_k or settings.default_top_k
@@ -208,7 +199,7 @@ class AgentRetrievalSystem:
                 total_sub_queries=1
             )
 
-        initial_state = self._make_initial_state(query, document_id, use_got=use_got)
+        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, use_got=use_got)
 
         try:
             result = await asyncio.wait_for(
@@ -216,7 +207,7 @@ class AgentRetrievalSystem:
                 timeout=settings.agent_timeout_seconds
             )
         except asyncio.TimeoutError:
-            result = await self._fallback_search(query, top_k, document_id)
+            result = await self._fallback_search(query, top_k, document_id, tenant_id)
 
         processing_time = time.time() - start_time
 
@@ -267,16 +258,17 @@ class AgentRetrievalSystem:
         top_k: int = None,
         document_id: Optional[str] = None,
         use_got: bool = False,
+        tenant_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream partial states after each graph node for SSE."""
-        initial_state = self._make_initial_state(query, document_id, use_got=use_got)
+        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, use_got=use_got)
 
         try:
             async for partial_state in self.graph.astream(initial_state):
                 for node_name, state in partial_state.items():
                     yield state
         except asyncio.TimeoutError:
-            result = await self._fallback_search(query, top_k or settings.default_top_k, document_id)
+            result = await self._fallback_search(query, top_k or settings.default_top_k, document_id, tenant_id)
             yield result
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -285,11 +277,13 @@ class AgentRetrievalSystem:
         self,
         query: str,
         document_id: Optional[str],
-        use_got: bool = False
+        use_got: bool = False,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         return {
             "query": query,
             "document_id": document_id,
+            "tenant_id": tenant_id,
             "decomposed_queries": [],
             "contexts": [],
             "reasoning_steps": [],
@@ -423,11 +417,13 @@ Return ONLY one word: hybrid | graph | cypher | filter | community | entity_summ
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
         document_id = state.get("document_id")
+        tenant_id = state.get("tenant_id")
 
         results = await self.hybrid_tool.run(
             query=query,
             k=settings.default_top_k,
-            document_id=document_id
+            document_id=document_id,
+            tenant_id=tenant_id
         )
 
         state["contexts"].extend(results)
@@ -438,8 +434,9 @@ Return ONLY one word: hybrid | graph | cypher | filter | community | entity_summ
     async def _graph_traversal(self, state: Dict[str, Any]) -> Dict[str, Any]:
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
+        tenant_id = state.get("tenant_id")
 
-        results = await self.graph_tool.run(query)
+        results = await self.graph_tool.run(query, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -449,8 +446,9 @@ Return ONLY one word: hybrid | graph | cypher | filter | community | entity_summ
     async def _cypher_query(self, state: Dict[str, Any]) -> Dict[str, Any]:
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
+        tenant_id = state.get("tenant_id")
 
-        results = await self.cypher_tool.run(query)
+        results = await self.cypher_tool.run(query, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -484,6 +482,8 @@ If no filters are extractable, return {{}}
 
         if document_id and "document_id" not in filters:
             filters["document_id"] = document_id
+        if state.get("tenant_id"):
+            filters["tenant_id"] = state.get("tenant_id")
 
         results = await self.filter_tool.run(filters) if filters else []
 
@@ -496,8 +496,9 @@ If no filters are extractable, return {{}}
         """Gap #2 — LazyGraphRAG community summary search"""
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
+        tenant_id = state.get("tenant_id")
 
-        results = await self.community_tool.run(query)
+        results = await self.community_tool.run(query, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -508,8 +509,9 @@ If no filters are extractable, return {{}}
         """MiroFish — Entity profile summary search via EntitySummarySearchTool"""
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
+        tenant_id = state.get("tenant_id")
 
-        results = await self.entity_summary_tool.run(query, k=settings.default_top_k)
+        results = await self.entity_summary_tool.run(query, k=settings.default_top_k, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -570,12 +572,13 @@ Return JSON list: ["follow-up 1", "follow-up 2"]
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
         document_id = state.get("document_id")
+        tenant_id = state.get("tenant_id")
 
         tasks = [
-            self.hybrid_tool.run(query=query, k=settings.default_top_k, document_id=document_id),
-            self.graph_tool.run(query),
-            self.cypher_tool.run(query),
-            self.community_tool.run(query),
+            self.hybrid_tool.run(query=query, k=settings.default_top_k, document_id=document_id, tenant_id=tenant_id),
+            self.graph_tool.run(query, tenant_id=tenant_id),
+            self.cypher_tool.run(query, tenant_id=tenant_id),
+            self.community_tool.run(query, tenant_id=tenant_id),
         ]
 
         tool_names = ["hybrid", "graph", "cypher", "community"]
@@ -683,9 +686,10 @@ Instructions:
         query: str,
         k: int,
         document_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fallback on timeout — use hybrid search directly"""
-        results = await self.hybrid_tool.run(query=query, k=k, document_id=document_id)
+        results = await self.hybrid_tool.run(query=query, k=k, document_id=document_id, tenant_id=tenant_id)
 
         if results:
             context_text = "\n\n".join([r.get("text", str(r)) for r in results[:3]])

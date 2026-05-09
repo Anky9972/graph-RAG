@@ -99,6 +99,7 @@ class GraphMemoryUpdater:
             text=text,
             document_id=f"live_update:{source_label}",
             chunk_index=0,
+            tenant_id=tenant_id,
         )
 
         # Extract entities and relationships

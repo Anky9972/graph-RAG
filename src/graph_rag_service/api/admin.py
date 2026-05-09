@@ -134,24 +134,55 @@ async def force_merge_entities(
 ):
     """Admin override to merge two nodes"""
     try:
-        query = '''
-        MATCH (e1:Entity {id: $source_id})
-        MATCH (e2:Entity {id: $target_id})
-        SET e1.properties = e1.properties + e2.properties
-        WITH e1, e2
-        MATCH (e2)-[r]->(other)
-        MERGE (e1)-[r2:RELATED_TO]->(other)
-        SET r2 = properties(r)
-        WITH e1, e2
-        MATCH (other)-[r]->(e2)
-        MERGE (other)-[r2:RELATED_TO]->(e1)
-        SET r2 = properties(r)
-        WITH e1, e2
-        DETACH DELETE e2
-        RETURN e1.id as id
-        '''
-        res = await store.execute_query(query, {"source_id": source_id, "target_id": target_id})
-        return {"status": "merged", "result": res}
+        import json
+        import re
+        
+        # 1. Fetch properties
+        props_q = "MATCH (e:Entity) WHERE e.id IN [$id1, $id2] RETURN e.id as id, e.properties as props"
+        props_res = await store.execute_query(props_q, {"id1": source_id, "id2": target_id})
+        
+        props1, props2 = {}, {}
+        for r in props_res:
+            try:
+                p = json.loads(r["props"]) if isinstance(r["props"], str) else (r["props"] or {})
+            except Exception:
+                p = {}
+            if r["id"] == source_id:
+                props1 = p
+            else:
+                props2 = p
+                
+        # Merge properties
+        merged_props = {**props2, **props1}
+        
+        # Update source
+        upd_q = "MATCH (e1:Entity {id: $id1}) SET e1.properties = $props"
+        await store.execute_query(upd_q, {"id1": source_id, "props": json.dumps(merged_props)})
+        
+        # 2. Re-wire relationships preserving types
+        rel_q = """
+        MATCH (e2:Entity {id: $id2})-[r]->(other) RETURN type(r) as t, properties(r) as p, id(other) as oid, 'out' as dir
+        UNION ALL
+        MATCH (other)-[r]->(e2:Entity {id: $id2}) RETURN type(r) as t, properties(r) as p, id(other) as oid, 'in' as dir
+        """
+        rels = await store.execute_query(rel_q, {"id2": target_id})
+        
+        for rel in rels:
+            t = rel["t"].upper().replace(" ", "_")
+            if not re.match(r'^[A-Z0-9_]+$', t):
+                t = "RELATED_TO"
+                
+            if rel["dir"] == "out":
+                merge_q = f"MATCH (e1:Entity {{id: $id1}}), (other) WHERE id(other) = $oid MERGE (e1)-[r:`{t}`]->(other) SET r = $p"
+            else:
+                merge_q = f"MATCH (e1:Entity {{id: $id1}}), (other) WHERE id(other) = $oid MERGE (other)-[r:`{t}`]->(e1) SET r = $p"
+            await store.execute_query(merge_q, {"id1": source_id, "oid": rel["oid"], "p": rel["p"]})
+            
+        # 3. Delete target
+        del_q = "MATCH (e2:Entity {id: $id2}) DETACH DELETE e2"
+        await store.execute_query(del_q, {"id2": target_id})
+        
+        return {"status": "merged", "result": source_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -288,6 +319,8 @@ async def update_user_role(
     store: Neo4jStore = Depends(get_graph_store)
 ):
     scopes = payload.get("scopes", [])
+    if username == admin_user.username and "admin" not in scopes:
+        raise HTTPException(status_code=400, detail="Cannot remove your own admin privileges.")
     cypher = "MATCH (u:User {username: $username}) SET u.scopes = $scopes RETURN u"
     await store.execute_query(cypher, {"username": username, "scopes": scopes})
     return {"status": "success", "username": username, "new_scopes": scopes}

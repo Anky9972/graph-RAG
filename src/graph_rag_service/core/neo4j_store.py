@@ -108,7 +108,7 @@ class Neo4jStore(GraphStore, VectorStore):
     async def _create_constraints(self) -> None:
         """Create constraints and indexes for performance"""
         constraints = [
-            "CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE CONSTRAINT entity_tenant_name IF NOT EXISTS FOR (e:Entity) REQUIRE (e.tenant_id, e.name) IS UNIQUE",
             "CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE",
             "CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)",
             "CREATE INDEX chunk_document IF NOT EXISTS FOR (c:Chunk) ON (c.document_id)",
@@ -132,13 +132,12 @@ class Neo4jStore(GraphStore, VectorStore):
         node_id = entity.id or str(uuid.uuid4())
 
         query = """
-        MERGE (e:Entity {name: $name})
+        MERGE (e:Entity {name: $name, tenant_id: $tenant_id})
         SET e.type = $type,
             e.properties = $properties,
             e.ontology_version = $ontology_version,
             e.confidence = $confidence,
             e.id = $id,
-            e.tenant_id = $tenant_id,
             e.community_id = $community_id,
             e.valid_from = $valid_from,
             e.valid_until = $valid_until,
@@ -177,8 +176,8 @@ class Neo4jStore(GraphStore, VectorStore):
         # if ontology and rel_type not in ontology.relationship_types: rel_type = "RELATED_TO"
 
         query = f"""
-        MATCH (source:Entity {{name: $source}})
-        MATCH (target:Entity {{name: $target}})
+        MATCH (source:Entity {name: $source, tenant_id: $tenant_id})
+        MATCH (target:Entity {name: $target, tenant_id: $tenant_id})
         MERGE (source)-[r:`{rel_type}`]->(target)
         SET r.properties = $properties,
             r.confidence = $confidence,
@@ -188,7 +187,6 @@ class Neo4jStore(GraphStore, VectorStore):
             r.valid_until = $valid_until,
             r.source_document_id = $source_document_id,
             r.source_chunk_id = $source_chunk_id,
-            r.tenant_id = $tenant_id,
             r.ingested_at = datetime()
         RETURN r.id as id
         """
@@ -245,7 +243,7 @@ class Neo4jStore(GraphStore, VectorStore):
         where_clause = ""
         params = {"source": source, "target": target}
         if tenant_id:
-            where_clause = "WHERE source.tenant_id = $tenant_id AND target.tenant_id = $tenant_id AND all(r in relationships(path) WHERE r.tenant_id = $tenant_id)"
+            where_clause = "WHERE source.tenant_id = $tenant_id AND target.tenant_id = $tenant_id AND all(r in relationships(path) WHERE r.tenant_id = $tenant_id) AND all(n in nodes(path) WHERE n.tenant_id = $tenant_id)"
             params["tenant_id"] = tenant_id
 
         query = f"""
@@ -273,7 +271,7 @@ class Neo4jStore(GraphStore, VectorStore):
         except (ValueError, TypeError):
             safe_depth = 1
 
-        tenant_filter = "WHERE e.tenant_id = $tenant_id" if tenant_id else ""
+        tenant_filter = "WHERE e.tenant_id = $tenant_id AND neighbor.tenant_id = $tenant_id AND all(rel in r WHERE rel.tenant_id = $tenant_id)" if tenant_id else ""
         query = f"""
         MATCH (e:Entity {{name: $name}})-[r*1..{safe_depth}]-(neighbor:Entity)
         {tenant_filter}
@@ -496,7 +494,8 @@ class Neo4jStore(GraphStore, VectorStore):
             c.embedding = item.embedding,
             c.chunk_index = item.chunk_index,
             c.page_number = item.page_number,
-            c.section_title = item.section_title
+            c.section_title = item.section_title,
+            c.tenant_id = item.tenant_id
 
         WITH c, item
         MATCH (d:Document {id: item.document_id})
@@ -515,6 +514,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 "chunk_index": metadata[i].get("chunk_index", i),
                 "page_number": metadata[i].get("page_number"),
                 "section_title": metadata[i].get("section_title"),
+                "tenant_id": metadata[i].get("tenant_id", settings.default_tenant_id),
             }
             for i in range(len(vectors))
         ]
@@ -744,7 +744,8 @@ class Neo4jStore(GraphStore, VectorStore):
             c.chunk_index = $chunk_index,
             c.embedding = $embedding,
             c.page_number = $page_number,
-            c.section_title = $section_title
+            c.section_title = $section_title,
+            c.tenant_id = $tenant_id
         RETURN c.id as id
         """
 
@@ -760,19 +761,21 @@ class Neo4jStore(GraphStore, VectorStore):
                 embedding=chunk.embedding,
                 page_number=chunk.page_number,
                 section_title=chunk.section_title,
+                tenant_id=getattr(chunk, "tenant_id", settings.default_tenant_id),
             )
 
             for entity in entities:
                 await self.create_node(entity)
                 link_query = """
                 MATCH (c:Chunk {id: $chunk_id})
-                MATCH (e:Entity {name: $entity_name})
+                MATCH (e:Entity {name: $entity_name, tenant_id: $tenant_id})
                 MERGE (c)-[:MENTIONS]->(e)
                 """
                 await session.run(
                     link_query,
                     chunk_id=chunk_id,
-                    entity_name=entity.name
+                    entity_name=entity.name,
+                    tenant_id=entity.tenant_id or settings.default_tenant_id
                 )
 
         return chunk_id
@@ -790,8 +793,10 @@ class Neo4jStore(GraphStore, VectorStore):
             u.disabled = $disabled,
             u.scopes = $scopes,
             u.tenant_id = $tenant_id,
-            u.created_at = datetime()
-        RETURN u.username as username
+            u.created_at = datetime(),
+            u.created = true
+        ON MATCH SET u.created = false
+        RETURN u.username as username, u.created as created
         """
         async with self.driver.session(database=self.database) as session:
             result = await session.run(
@@ -805,7 +810,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 tenant_id=user_data.get("tenant_id", settings.default_tenant_id),
             )
             record = await result.single()
-            if not record:
+            if not record or not record.get("created", True):
                 raise ValueError(f"User {user_data['username']} already exists")
             return record["username"]
 

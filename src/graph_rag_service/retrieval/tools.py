@@ -65,7 +65,8 @@ class HybridSearchTool:
         vector_task = self.store.search(
             query_vector=query_embedding,
             k=search_k,
-            filter=filter or ({"document_id": document_id} if document_id else None)
+            filter=filter or ({"document_id": document_id} if document_id else None),
+            tenant_id=tenant_id
         )
 
         bm25_results, vector_results = await asyncio.gather(
@@ -206,7 +207,7 @@ class CommunitySummaryTool:
         k = k or 3  # Top-3 communities
 
         # Step 1: Find relevant entities
-        entity_names = await self._find_relevant_entities(query, limit=20)
+        entity_names = await self._find_relevant_entities(query, limit=20, tenant_id=tenant_id)
         if not entity_names:
             return []
 
@@ -231,17 +232,23 @@ class CommunitySummaryTool:
 
         return results
 
-    async def _find_relevant_entities(self, query: str, limit: int = 20) -> List[str]:
+    async def _find_relevant_entities(self, query: str, limit: int = 20, tenant_id: Optional[str] = None) -> List[str]:
         """Find entity names most relevant to the query via BM25"""
         try:
-            cypher = """
+            tenant_filter_node = "WHERE node.tenant_id = $tenant_id" if tenant_id else ""
+            tenant_filter_entity = "{tenant_id: $tenant_id}" if tenant_id else ""
+            cypher = f"""
             CALL db.index.fulltext.queryNodes('chunk_text_index', $query)
             YIELD node, score
-            MATCH (node)-[:MENTIONS]->(e:Entity)
+            {tenant_filter_node}
+            MATCH (node)-[:MENTIONS]->(e:Entity {tenant_filter_entity})
             RETURN DISTINCT e.name as name
             LIMIT $limit
             """
-            rows = await self.store.execute_query(cypher, {"query": query, "limit": limit})
+            params = {"query": query, "limit": limit}
+            if tenant_id:
+                params["tenant_id"] = tenant_id
+            rows = await self.store.execute_query(cypher, params)
             return [r["name"] for r in rows if r.get("name")]
         except Exception:
             return []
@@ -389,6 +396,10 @@ class CypherGenerationTool:
         self.description = "Generate and execute Cypher queries for complex structured graph queries"
 
     async def run(self, query: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        if tenant_id and tenant_id != settings.default_tenant_id:
+            logger.warning("CypherGenerationTool disabled in multi-tenant environment to prevent data leaks.")
+            return []
+            
         cypher = await self._generate_cypher(query)
         if not cypher:
             return []

@@ -1,7 +1,10 @@
-from datetime import timezone
-from datetime import timezone
+from datetime import datetime, timezone
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query, Response
 from typing import List, Dict, Any, Optional
+from ...workers.celery_worker import celery_app
+
+logger = logging.getLogger(__name__)
 
 from ...core.neo4j_store import Neo4jStore
 from ...retrieval.agent import AgentRetrievalSystem
@@ -118,7 +121,7 @@ async def get_my_stats(request: Request, current_user: User = Depends(get_curren
     msg_q = """
     MATCH (u:User {username: $username})-[:HAS_CONVERSATION]->(c:Conversation)-[:HAS_MESSAGE]->(m)
     WHERE m.role = 'user'
-    RETURN count(m) as message_count, max(m.timestamp) as last_active
+    RETURN count(m) as message_count, max(m.created_at) as last_active
     """
     try:
         conv_rows = await request.app.state.graph_store.execute_query(conv_q, {"username": username})
@@ -126,8 +129,8 @@ async def get_my_stats(request: Request, current_user: User = Depends(get_curren
         conversation_count = conv_rows[0]["conversation_count"] if conv_rows else 0
         message_count = msg_rows[0]["message_count"] if msg_rows else 0
         last_active = msg_rows[0]["last_active"] if msg_rows else None
-        if hasattr(last_active, "iso_format"):
-            last_active = last_active.iso_format()
+        if hasattr(last_active, "isoformat"):
+            last_active = last_active.isoformat()
     except Exception:
         conversation_count = 0
         message_count = 0

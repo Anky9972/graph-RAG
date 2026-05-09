@@ -5,7 +5,7 @@ Extended with: temporal fields, tenant support, eval/confidence models
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, List, Any, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -101,6 +101,7 @@ class Chunk(BaseModel):
     # Extended metadata for citation tracing
     page_number: Optional[int] = None
     section_title: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 class Document(BaseModel):

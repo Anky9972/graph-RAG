@@ -5,8 +5,10 @@ from ...core.neo4j_store import Neo4jStore
 from ...retrieval.agent import AgentRetrievalSystem
 from ...ingestion.pipeline import IngestionPipeline
 from ...config import settings
-from ...api.models import *
-from ...api.auth import get_current_user, User
+from ...api.models import RegisterRequest, LoginRequest, TokenResponse
+from ...api.auth import get_current_user, User, get_password_hash, verify_password, create_access_token
+from fastapi import status
+from datetime import timedelta
 import redis
 from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 
@@ -16,49 +18,51 @@ from ...core.storage import get_storage
 storage = get_storage()
 
 @router.post("/api/auth/register", response_model=User, tags=["Authentication"])
-async def register(request: RegisterRequest):
+async def register(payload: RegisterRequest, request: Request):
     """Register a new user"""
-    existing_user = await request.app.state.graph_store.get_user(request.username)
+    existing_user = await request.app.state.graph_store.get_user(payload.username)
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
     
-    hashed_password = get_password_hash(request.password)
+    hashed_password = get_password_hash(payload.password)
     # SECURITY: Prevent unauthorized admin registration
-    safe_scopes = [s for s in request.scopes if s != "admin"]
+    safe_scopes = [s for s in payload.scopes if s != "admin"]
     if not safe_scopes:
         safe_scopes = ["read", "write"]
 
     user_data = {
-        "username": request.username,
+        "username": payload.username,
         "hashed_password": hashed_password,
-        "email": request.email,
-        "full_name": request.full_name,
+        "email": payload.email,
+        "full_name": payload.full_name,
         "disabled": False,
-        "scopes": safe_scopes
+        "scopes": safe_scopes,
+        "tenant_id": payload.tenant_id if hasattr(payload, "tenant_id") else settings.default_tenant_id
     }
     
     await request.app.state.graph_store.create_user(user_data)
     
     return User(
-        username=request.username,
-        email=request.email,
-        full_name=request.full_name,
+        username=payload.username,
+        email=payload.email,
+        full_name=payload.full_name,
         disabled=False,
-        scopes=safe_scopes
+        scopes=safe_scopes,
+        tenant_id=user_data["tenant_id"]
     )
 
 
 @router.post("/api/auth/login", response_model=TokenResponse, tags=["Authentication"])
-async def login(request: LoginRequest):
+async def login(payload: LoginRequest, request: Request):
     """
     Login and get access token
     Verifies user against Neo4j database
     """
-    user_data = await request.app.state.graph_store.get_user(request.username)
-    if not user_data or not verify_password(request.password, user_data["hashed_password"]):
+    user_data = await request.app.state.graph_store.get_user(payload.username)
+    if not user_data or not verify_password(payload.password, user_data["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

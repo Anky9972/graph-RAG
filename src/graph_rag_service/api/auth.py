@@ -3,7 +3,7 @@ Authentication and authorization
 JWT-based authentication with role-based access control
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
@@ -33,6 +33,7 @@ class User(BaseModel):
     full_name: Optional[str] = None
     disabled: bool = False
     scopes: list = []
+    tenant_id: Optional[str] = None
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -151,8 +152,11 @@ async def get_current_user(
         
     user = User(
         username=user_data["username"],
+        email=user_data.get("email"),
+        full_name=user_data.get("full_name"),
         scopes=user_data.get("scopes", []),
-        disabled=user_data.get("disabled", False)
+        disabled=user_data.get("disabled", False),
+        tenant_id=user_data.get("tenant_id", settings.default_tenant_id)
     )
     
     if user.disabled:

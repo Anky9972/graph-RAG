@@ -341,8 +341,12 @@ class OntologyDriftDetector:
     @staticmethod
     def _bump_version(version: str, drift_score: float) -> str:
         """Increment the semantic version based on drift score."""
+        import re
         try:
-            prefix, nums = version.split("v", 1)
+            match = re.search(r'(\d+\.\d+\.\d+)', version)
+            if not match:
+                return version + ".1"
+            nums = match.group(1)
             parts = nums.split(".")
             
             # Make sure it corresponds to MAJOR.MINOR.PATCH

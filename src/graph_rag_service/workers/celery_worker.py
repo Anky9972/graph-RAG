@@ -1,6 +1,11 @@
 """
 Celery workers for async document ingestion
 Decouples ingestion from the API request loop
+
+KNOWN LIMITATION: Currently creates a new Neo4jStore per task.
+At scale, this requires dedicated Neo4j read replicas or connection pooling
+like PgBouncer (Neo4j driver handles some internal pooling, but high
+concurrency can exhaust connections).
 """
 
 from celery import Celery

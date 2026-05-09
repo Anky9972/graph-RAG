@@ -854,8 +854,8 @@ class EntitySummarySearchTool:
             try:
                 import re as _re
                 # SECURITY: sanitize each word before string-interpolating into Cypher.
-                # Only keep basic alphanumeric / hyphen chars to prevent unicode/injection.
-                _safe_word = _re.compile(r"^[A-Za-z0-9\-]+$")
+                # Allow basic punctuation to support terms like C++, Node.js, O'Connor.
+                _safe_word = _re.compile(r"^[\w\s\-\.\+\'\"]+$")
                 words = [
                     w for w in query.split()
                     if len(w) > 3 and _safe_word.match(w)

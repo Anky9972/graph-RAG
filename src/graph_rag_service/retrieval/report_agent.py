@@ -61,14 +61,14 @@ class InsightForgeTool:
         self.store = store
         self.llm = llm
 
-    async def run(self, query: str, k: int = 8) -> List[Dict[str, Any]]:
+    async def run(self, query: str, k: int = 8, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
 
         # 1. Hybrid vector + BM25 chunk retrieval
         try:
             embedding = await self.llm.embed(query)
-            bm25_task = self.store.bm25_search(query, k=k)
-            vector_task = self.store.search(query_vector=embedding, k=k)
+            bm25_task = self.store.bm25_search(query, k=k, tenant_id=tenant_id)
+            vector_task = self.store.search(query_vector=embedding, k=k, tenant_id=tenant_id)
             bm25_r, vector_r = await asyncio.gather(
                 bm25_task, vector_task, return_exceptions=True
             )
@@ -86,12 +86,14 @@ class InsightForgeTool:
             entity_query = """
             CALL db.index.fulltext.queryNodes('chunk_text_index', $q)
             YIELD node, score
+            WHERE ($tenant_id IS NULL OR node.tenant_id = $tenant_id)
             MATCH (node)-[:MENTIONS]->(e:Entity)
+            WHERE ($tenant_id IS NULL OR e.tenant_id = $tenant_id)
             RETURN DISTINCT e.name as name, e.summary as summary
             LIMIT 10
             """
             entity_rows = await self.store.execute_query(
-                entity_query, {"q": query}
+                entity_query, {"q": query, "tenant_id": tenant_id}
             )
             for row in entity_rows:
                 if row.get("summary"):
@@ -108,12 +110,13 @@ class InsightForgeTool:
             community_query = """
             MATCH (e:Entity)
             WHERE e.community_id IS NOT NULL
+              AND ($tenant_id IS NULL OR e.tenant_id = $tenant_id)
             WITH e.community_id as cid, collect(e.name)[..5] as members
             RETURN cid, members
             ORDER BY size(members) DESC
             LIMIT 3
             """
-            communities = await self.store.execute_query(community_query)
+            communities = await self.store.execute_query(community_query, {"tenant_id": tenant_id})
             for comm in communities:
                 member_summary = ", ".join(comm.get("members", []))
                 results.append({
@@ -155,12 +158,13 @@ class PanoramaSearchTool:
         self.store = store
 
     async def run(
-        self, entity_type: str = "Entity", limit: int = 30
+        self, entity_type: str = "Entity", limit: int = 30, tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Return entities of the given type with their summaries."""
         query = """
         MATCH (e:Entity)
-        WHERE e.type = $type OR $type = 'Entity'
+        WHERE (e.type = $type OR $type = 'Entity')
+          AND ($tenant_id IS NULL OR e.tenant_id = $tenant_id)
         RETURN e.name as name, e.type as type,
                e.summary as summary,
                size((e)--()) as degree
@@ -169,7 +173,7 @@ class PanoramaSearchTool:
         """
         try:
             rows = await self.store.execute_query(
-                query, {"type": entity_type, "limit": limit}
+                query, {"type": entity_type, "limit": limit, "tenant_id": tenant_id}
             )
             results = []
             for r in rows:
@@ -204,18 +208,19 @@ class QuickSearchTool:
         self.store = store
         self.llm = llm
 
-    async def run(self, entity_name: str) -> List[Dict[str, Any]]:
+    async def run(self, entity_name: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Look up an entity and return its profile + connections."""
         # Exact match first, then fuzzy BM25
         entity_query = """
         MATCH (e:Entity)
-        WHERE e.name = $name OR toLower(e.name) CONTAINS toLower($name)
+        WHERE (e.name = $name OR toLower(e.name) CONTAINS toLower($name))
+          AND ($tenant_id IS NULL OR e.tenant_id = $tenant_id)
         RETURN e.name as name, e.type as type, e.summary as summary
         LIMIT 3
         """
         try:
             entities = await self.store.execute_query(
-                entity_query, {"name": entity_name}
+                entity_query, {"name": entity_name, "tenant_id": tenant_id}
             )
         except Exception:
             entities = []
@@ -233,6 +238,7 @@ class QuickSearchTool:
             # Get direct relationships
             rel_query = """
             MATCH (e:Entity {name: $name})-[r]-(other:Entity)
+            WHERE ($tenant_id IS NULL OR (e.tenant_id = $tenant_id AND other.tenant_id = $tenant_id AND r.tenant_id = $tenant_id))
             RETURN type(r) as rel_type,
                    other.name as other_name,
                    other.type as other_type
@@ -240,7 +246,7 @@ class QuickSearchTool:
             """
             try:
                 rels = await self.store.execute_query(
-                    rel_query, {"name": name}
+                    rel_query, {"name": name, "tenant_id": tenant_id}
                 )
                 rel_lines = [
                     f"{r['rel_type']} → {r['other_name']} ({r['other_type']})"
@@ -299,6 +305,7 @@ Available tools:
         topic: str,
         report_type: Literal["executive", "detailed", "entity_focus"] = "detailed",
         target_entity: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> ReportResult:
         """
         Generate an analytical report on the given topic.
@@ -326,7 +333,7 @@ Available tools:
         total_confidence_score = 0.0
 
         for question in sub_questions:
-            section_content, contexts, entities, confidence = await self._react_loop(question)
+            section_content, contexts, entities, confidence = await self._react_loop(question, tenant_id=tenant_id)
             if section_content:
                 sections[question] = section_content
             all_contexts.extend(contexts)
@@ -400,7 +407,7 @@ Return ONLY a JSON list of strings:
         ]
 
     async def _react_loop(
-        self, question: str
+        self, question: str, tenant_id: Optional[str] = None
     ) -> tuple[str, List[str], List[str], float]:
         """
         Run a ReACT iteration for one sub-question.
@@ -422,7 +429,7 @@ Return ONLY a JSON list of strings:
                 break
 
             # ACT: run the chosen tool
-            tool_results = await self._act(tool_name, tool_arg)
+            tool_results = await self._act(tool_name, tool_arg, tenant_id=tenant_id)
             self._tool_calls += 1
 
             if tool_results:
@@ -480,16 +487,16 @@ Otherwise, deeply analyze the observations in a step-by-step thought and pick th
             return f"Failed to parse or error: {exc}", "DONE", ""
 
     async def _act(
-        self, tool_name: str, tool_arg: str
+        self, tool_name: str, tool_arg: str, tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Dispatch tool call and return results."""
         try:
             if tool_name == "InsightForge":
-                return await self.insight_forge.run(tool_arg)
+                return await self.insight_forge.run(tool_arg, tenant_id=tenant_id)
             elif tool_name == "PanoramaSearch":
-                return await self.panorama.run(tool_arg)
+                return await self.panorama.run(tool_arg, tenant_id=tenant_id)
             elif tool_name == "QuickSearch":
-                return await self.quick_search.run(tool_arg)
+                return await self.quick_search.run(tool_arg, tenant_id=tenant_id)
         except Exception as exc:
             logger.info(f"[ReportAgent] Tool {tool_name} failed: {exc}")
         return []

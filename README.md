@@ -237,7 +237,7 @@ graph-RAG/
 
 - Python 3.12+
 - Node.js 18+
-- Neo4j 5.x (running)
+- Neo4j 5.x (running) with **APOC** and **Graph Data Science (GDS)** plugins installed
 - Redis (running)
 - Ollama *(optional, for local LLMs)*
 

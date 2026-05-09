@@ -176,8 +176,10 @@ class Neo4jStore(GraphStore, VectorStore):
         # if ontology and rel_type not in ontology.relationship_types: rel_type = "RELATED_TO"
 
         query = f"""
-        MATCH (source:Entity {name: $source, tenant_id: $tenant_id})
-        MATCH (target:Entity {name: $target, tenant_id: $tenant_id})
+        MATCH (source:Entity)
+        WHERE source.name = $source AND source.tenant_id = $tenant_id
+        MATCH (target:Entity)
+        WHERE target.name = $target AND target.tenant_id = $tenant_id
         MERGE (source)-[r:`{rel_type}`]->(target)
         SET r.properties = $properties,
             r.confidence = $confidence,

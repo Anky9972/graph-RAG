@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Multi-LLM provider factory with unified interface
 Supports OpenAI, Anthropic, Gemini, and Ollama
@@ -109,7 +111,7 @@ class UnifiedLLMProvider(LLMProvider):
                 return response.message.content
             except asyncio.TimeoutError as e:
                 last_error = e
-                print(f"LLM request timed out (attempt {attempt + 1}/{_MAX_RETRIES}).")
+                logger.info(f"LLM request timed out (attempt {attempt + 1}/{_MAX_RETRIES}).")
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(2)
             except Exception as e:
@@ -118,7 +120,7 @@ class UnifiedLLMProvider(LLMProvider):
                 # Retry on rate limit (429) errors
                 if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
                     delay = _BASE_DELAY * (2 ** attempt)
-                    print(f"Rate limited (attempt {attempt + 1}/{_MAX_RETRIES}), retrying in {delay}s...")
+                    logger.info(f"Rate limited (attempt {attempt + 1}/{_MAX_RETRIES}), retrying in {delay}s...")
                     await asyncio.sleep(delay)
                 else:
                     raise
@@ -153,31 +155,29 @@ Only return the JSON object, no additional text.
         
         # Try to parse JSON response
         try:
-            # Clean up response - remove markdown code blocks if present
+            import re
             cleaned = response.strip()
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            if cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
+            # Remove markdown fence
+            cleaned = re.sub(r'^```(?:json)?\s*', '', cleaned)
+            cleaned = re.sub(r'\s*```$', '', cleaned)
             cleaned = cleaned.strip()
             
             # Parse JSON
             data = json.loads(cleaned)
             return response_model(**data)
         except Exception as e:
-            # Fallback: try to extract JSON from response
+            # Fallback: try to extract JSON from response using more robust matching
             import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            # Extract anything between the first { or [ and the last } or ]
+            json_match = re.search(r'([\{\[].*[\}\]])', response, re.DOTALL)
             if json_match:
                 try:
-                    data = json.loads(json_match.group())
+                    data = json.loads(json_match.group(1))
                     return response_model(**data)
-                except:
+                except Exception:
                     pass
-            
-            raise ValueError(f"Failed to parse structured response: {e}\nResponse: {response}")
+            logger.error(f"Failed to parse structured JSON: {e}\nResponse: {response}")
+            raise ValueError(f"Failed to parse structured response: {e}")
     
     async def embed(self, text: str) -> List[float]:
         """Generate embedding for text"""
@@ -197,7 +197,7 @@ Only return the JSON object, no additional text.
                     last_error = e
                     if "429" in str(e) or "quota" in str(e).lower():
                         delay = 5 * (2 ** attempt)
-                        print(f"Embedding rate limited, retrying in {delay}s...")
+                        logger.info(f"Embedding rate limited, retrying in {delay}s...")
                         await asyncio.sleep(delay)
                     else:
                         raise
@@ -241,7 +241,7 @@ Only return the JSON object, no additional text.
                     last_error = e
                     if "429" in str(e) or "quota" in str(e).lower():
                         delay = 5 * (2 ** attempt)
-                        print(f"Embedding rate limited, retrying in {delay}s...")
+                        logger.info(f"Embedding rate limited, retrying in {delay}s...")
                         await asyncio.sleep(delay)
                     else:
                         raise

@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 The Ontology-to-Persona Pipeline
 Takes generic entities from the Neo4j Graph (like 'Person' or 'Organization')
@@ -74,6 +76,6 @@ class PersonaGenerator:
                 )
                 count += 1
             except Exception as e:
-                print(f"Failed to generate persona for {record['name']}: {e}")
+                logger.info(f"Failed to generate persona for {record['name']}: {e}")
                 
         return count

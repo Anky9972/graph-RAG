@@ -69,7 +69,7 @@ class DocumentListResponse(BaseModel):
 # ── Query ─────────────────────────────────────────────────────────────────────
 
 class QueryRequest(BaseModel):
-    query: str = Field(..., description="User query")
+    query: str = Field(..., max_length=2000, description="User query")
     top_k: Optional[int] = Field(5, description="Number of results to retrieve")
     streaming: Optional[bool] = Field(False, description="Enable streaming responses")
     document_id: Optional[str] = Field(None, description="Filter query to a specific document")

@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Entity and relationship extraction from text
 Uses LLM with structured output and ontology constraints
@@ -131,7 +133,7 @@ Use only the entity types and relationship types provided in the ontology."""
         
         for result in results:
             if isinstance(result, Exception):
-                print(f"Extraction error: {result}")
+                logger.info(f"Extraction error: {result}")
                 continue
             all_entities.extend(result.entities)
             all_relationships.extend(result.relationships)
@@ -277,7 +279,7 @@ Rules:
             return entities, relationships
             
         except Exception as e:
-            print(f"Failed to parse extraction: {e}")
+            logger.info(f"Failed to parse extraction: {e}")
             return [], []
     
     async def generate_embeddings(

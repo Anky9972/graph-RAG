@@ -1,5 +1,6 @@
 from datetime import timezone
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from datetime import timezone
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query, Response
 from typing import List, Dict, Any, Optional
 
 from ...core.neo4j_store import Neo4jStore
@@ -17,7 +18,7 @@ from ...core.storage import get_storage
 storage = get_storage()
 
 @router.get("/api/system/health", response_model=SystemHealthResponse, tags=["System"])
-async def health_check(request: Request):
+async def health_check(request: Request, response: Response):
     """System health check"""
     
     neo4j_connected = False
@@ -28,15 +29,18 @@ async def health_check(request: Request):
         # Check Neo4j
         await request.app.state.graph_store.execute_query("RETURN 1")
         neo4j_connected = True
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Neo4j health check failed: {e}")
     
     try:
         # Check Redis
-        await request.app.state.redis_client.ping()
-        redis_connected = True
-    except:
-        pass
+        if hasattr(request.app.state, 'redis_client'):
+            await request.app.state.redis_client.ping()
+            redis_connected = True
+        else:
+            redis_connected = True # If redis isn't configured, ignore it
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
     
     try:
         # Check Celery workers
@@ -44,10 +48,13 @@ async def health_check(request: Request):
         active = inspect.active()
         if active:
             workers_active = len(active)
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Celery health check failed: {e}")
     
     overall_status = "healthy" if (neo4j_connected and redis_connected) else "degraded"
+    
+    if overall_status == "degraded":
+        response.status_code = 503
     
     return SystemHealthResponse(
         status=overall_status,

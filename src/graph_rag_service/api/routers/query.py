@@ -12,8 +12,6 @@ from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_p
 
 router = APIRouter()
 
-from ...core.storage import get_storage
-storage = get_storage()
 
 @router.post("/api/query", tags=["Query"])
 async def query(

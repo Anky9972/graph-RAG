@@ -1,4 +1,5 @@
 from datetime import timezone
+from datetime import timezone
 import os
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
 from typing import List, Dict, Any, Optional
@@ -288,35 +289,7 @@ async def reject_drift_report(request: Request,
     return {"status": "rejected", "report_id": report_id}
 
 
-# ── Frontend Static Files Hosting ─────────────────────────────────────────────
 
-FRONTEND_DIST = str(settings.frontend_dist_dir)
-
-if False:
-    pass
-    # Mount frontend static assets if they exist (Vite uses /assets by default)
-    assets_dir = os.path.join(FRONTEND_DIST, "assets")
-    if os.path.exists(assets_dir) and os.path.isdir(assets_dir):
-        # app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
-
-    # Catch-all route for SPA routing (except for /api and /docs)
-    @router.get("/{full_path:path}", tags=["Frontend SPA"])
-    async def serve_frontend(full_path: str):
-        # Exclude API and Swagger UI routes from SPA catch-all
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-            raise HTTPException(status_code=404, detail="API route not found")
-            
-        file_path = os.path.join(FRONTEND_DIST, full_path)
-        # Serve literal requested file if it exists (e.g. vite.svg, favicon.ico)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
-            
-        # Fallback to index.html for client-side routing
-        index_path = os.path.join(FRONTEND_DIST, "index.html")
-        if os.path.exists(index_path):
-            return FileResponse(index_path)
-            
-        raise HTTPException(status_code=404, detail="Frontend path not found")
 else:
     @router.get("/", tags=["Root"])
     async def root():

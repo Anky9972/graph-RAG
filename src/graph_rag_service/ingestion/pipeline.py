@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Complete ingestion pipeline
 Orchestrates document processing, extraction, and graph construction
@@ -66,32 +68,32 @@ class IngestionPipeline:
         """
         
         # Step 1: Process document
-        print(f"Processing document: {file_path.name}")
+        logger.info(f"Processing document: {file_path.name}")
         document = await self.document_processor.process_document(file_path)
         chunks = await self.document_processor.chunk_document(document)
         
         if not chunks:
             raise ValueError("No chunks extracted from document")
         
-        print(f"Created {len(chunks)} chunks")
+        logger.info(f"Created {len(chunks)} chunks")
         
         # Step 2: Generate or use ontology
         if ontology is None:
             if self._ontology is None:
-                print("Generating ontology from sample chunks...")
+                logger.info("Generating ontology from sample chunks...")
                 self._ontology = await self.ontology_generator.generate_initial_ontology(
                     chunks[:5]
                 )
-                print(f"Generated ontology v{self._ontology.version}")
-                print(f"Entity types: {', '.join(self._ontology.entity_types)}")
-                print(f"Relationship types: {', '.join(self._ontology.relationship_types)}")
+                logger.info(f"Generated ontology v{self._ontology.version}")
+                logger.info(f"Entity types: {', '.join(self._ontology.entity_types)}")
+                logger.info(f"Relationship types: {', '.join(self._ontology.relationship_types)}")
                 # Persist ontology to Neo4j so the API server can load it
                 if self.graph_store:
                     await self.graph_store.save_ontology(self._ontology)
             ontology = self._ontology
         
         # Step 3: Extract entities and relationships
-        print("Extracting entities and relationships...")
+        logger.info("Extracting entities and relationships...")
         extraction_result = await self.extractor.extract_from_chunks(
             chunks,
             ontology=ontology,
@@ -99,19 +101,19 @@ class IngestionPipeline:
             progress_callback=progress_callback
         )
         
-        print(f"Extracted {len(extraction_result.entities)} entities")
-        print(f"Extracted {len(extraction_result.relationships)} relationships")
+        logger.info(f"Extracted {len(extraction_result.entities)} entities")
+        logger.info(f"Extracted {len(extraction_result.relationships)} relationships")
         
         # Step 4: Generate embeddings
-        print("Generating embeddings...")
+        logger.info("Generating embeddings...")
         chunks_with_embeddings = await self.extractor.generate_embeddings(chunks)
         extraction_result.chunks = chunks_with_embeddings
         
         # Step 5: Store in graph database
         if store_results and self.graph_store:
-            print("Storing in graph database...")
+            logger.info("Storing in graph database...")
             await self._store_extraction(document, extraction_result)
-            print("Storage complete")
+            logger.info("Storage complete")
         
         return extraction_result
     
@@ -138,7 +140,7 @@ class IngestionPipeline:
                 result = await self.ingest_document(file_path, ontology)
                 results.append(result)
             except Exception as e:
-                print(f"Failed to ingest {file_path}: {e}")
+                logger.info(f"Failed to ingest {file_path}: {e}")
         
         return results
     
@@ -179,7 +181,7 @@ class IngestionPipeline:
             try:
                 await self.graph_store.create_relationship(relationship)
             except Exception as e:
-                print(f"Failed to create relationship {relationship.type}: {e}")
+                logger.info(f"Failed to create relationship {relationship.type}: {e}")
         
         # Store chunks with entity links
         for chunk in extraction.chunks:

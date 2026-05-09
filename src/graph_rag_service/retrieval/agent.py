@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Agentic retrieval system with LangGraph orchestration
 Gap #1:  Hybrid BM25+Vector search as default tool
@@ -89,7 +91,7 @@ class AgentRetrievalSystem:
                     "confidence": 0.95
                 }
         except Exception as e:
-            print(f"Semantic cache get error: {e}")
+            logger.info(f"Semantic cache get error: {e}")
         return None
 
     async def _cache_set(self, query: str, result: Dict[str, Any]) -> None:
@@ -101,7 +103,7 @@ class AgentRetrievalSystem:
             if embedding and result.get("answer"):
                 await self.store.set_semantic_cache(query, result["answer"], embedding)
         except Exception as e:
-            print(f"Semantic cache set error: {e}")
+            logger.info(f"Semantic cache set error: {e}")
 
     # ── LangGraph workflow ────────────────────────────────────────────────────
 
@@ -559,7 +561,7 @@ Return JSON list: ["follow-up 1", "follow-up 2"]
                     f"DRIFT expanded with {len(follow_ups)} follow-up queries"
                 )
         except Exception as e:
-            print(f"DRIFT expansion error: {e}")
+            logger.info(f"DRIFT expansion error: {e}")
 
         state["drift_expanded"] = True
         return state

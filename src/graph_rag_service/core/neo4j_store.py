@@ -17,6 +17,7 @@ from .abstractions import GraphStore, VectorStore
 from .models import Entity, Relationship, Chunk
 from ..config import settings
 import logging
+logger = logging.getLogger(__name__)
 
 logging.getLogger("neo4j").setLevel(logging.ERROR)
 
@@ -44,7 +45,9 @@ class Neo4jStore(GraphStore, VectorStore):
         """Establish connection to Neo4j"""
         self.driver = AsyncGraphDatabase.driver(
             self.uri,
-            auth=(self.user, self.password)
+            auth=(self.user, self.password),
+            max_connection_pool_size=getattr(settings, 'neo4j_pool_size', 100),
+            connection_acquisition_timeout=getattr(settings, 'neo4j_timeout', 60.0)
         )
         await self._create_vector_index()
         await self._create_fulltext_index()   # Gap #1 — BM25
@@ -84,7 +87,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 """
                 await session.run(cache_query, dimension=settings.embedding_dimension)
             except Exception as e:
-                print(f"Vector index creation: {e}")
+                logger.info(f"Vector index creation: {e}")
 
     async def _create_fulltext_index(self) -> None:
         """
@@ -100,7 +103,7 @@ class Neo4jStore(GraphStore, VectorStore):
             try:
                 await session.run(query)
             except Exception as e:
-                print(f"Fulltext index creation: {e}")
+                logger.info(f"Fulltext index creation: {e}")
 
     async def _create_constraints(self) -> None:
         """Create constraints and indexes for performance"""
@@ -165,10 +168,18 @@ class Neo4jStore(GraphStore, VectorStore):
         import json
         rel_id = str(uuid.uuid4())
 
-        query = """
-        MATCH (source:Entity {name: $source})
-        MATCH (target:Entity {name: $target})
-        MERGE (source)-[r:%s]->(target)
+        rel_type = relationship.type.upper().replace(" ", "_")
+        import re
+        if not re.match(r'^[A-Z0-9_]+$', rel_type):
+            rel_type = "RELATED_TO"
+
+        # Optional: could also check `ontology = await self.load_ontology()`
+        # if ontology and rel_type not in ontology.relationship_types: rel_type = "RELATED_TO"
+
+        query = f"""
+        MATCH (source:Entity {{name: $source}})
+        MATCH (target:Entity {{name: $target}})
+        MERGE (source)-[r:`{rel_type}`]->(target)
         SET r.properties = $properties,
             r.confidence = $confidence,
             r.ontology_version = $ontology_version,
@@ -180,7 +191,7 @@ class Neo4jStore(GraphStore, VectorStore):
             r.tenant_id = $tenant_id,
             r.ingested_at = datetime()
         RETURN r.id as id
-        """ % relationship.type
+        """
 
         async with self.driver.session(database=self.database) as session:
             result = await session.run(
@@ -203,14 +214,24 @@ class Neo4jStore(GraphStore, VectorStore):
     async def execute_query(
         self,
         query: str,
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        timeout_seconds: float = 30.0
     ) -> List[Dict[str, Any]]:
-        """Execute a Cypher query"""
+        """Execute a Cypher query with timeout"""
         params = params or {}
         async with self.driver.session(database=self.database) as session:
-            result = await session.run(query, parameters=params)
-            records = await result.data()
-            return records
+            try:
+                result = await asyncio.wait_for(
+                    session.run(query, parameters=params), 
+                    timeout=timeout_seconds
+                )
+                records = await asyncio.wait_for(
+                    result.data(), 
+                    timeout=timeout_seconds
+                )
+                return records
+            except asyncio.TimeoutError:
+                raise TimeoutError(f"Cypher query execution timed out after {timeout_seconds} seconds")
 
     async def find_path(
         self,
@@ -219,16 +240,24 @@ class Neo4jStore(GraphStore, VectorStore):
         max_depth: int = 3,
         tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Find paths between two entities"""
-        tenant_filter = "WHERE source.tenant_id = $tenant_id" if tenant_id else ""
+        # Sanitize max_depth to prevent Cypher injection
+        try:
+            safe_max_depth = int(max_depth)
+        except (ValueError, TypeError):
+            safe_max_depth = 3
+            
+        where_clause = ""
+        params = {"source": source, "target": target}
+        if tenant_id:
+            where_clause = "WHERE source.tenant_id = $tenant_id AND target.tenant_id = $tenant_id AND all(r in relationships(path) WHERE r.tenant_id = $tenant_id)"
+            params["tenant_id"] = tenant_id
+
         query = f"""
-        MATCH path = (source:Entity {{name: $source}})-[*1..{max_depth}]-(target:Entity {{name: $target}})
-        {tenant_filter}
-        RETURN [node in nodes(path) | {{name: node.name, type: node.type}}] as nodes,
-               [rel in relationships(path) | type(rel)] as relationships,
+        MATCH path = (source:Entity {{name: $source}})-[*1..{safe_max_depth}]-(target:Entity {{name: $target}})
+        {where_clause}
+        RETURN [n in nodes(path) | {{name: n.name, type: n.type}}] as nodes,
+               [r in relationships(path) | {{type: type(r), properties: r.properties}}] as relationships,
                length(path) as length
-        ORDER BY length
-        LIMIT 5
         """
 
         async with self.driver.session(database=self.database) as session:
@@ -331,7 +360,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 records = await result.data()
                 return records
         except Exception as e:
-            print(f"BM25 search error: {e}")
+            logger.info(f"BM25 search error: {e}")
             return []
 
 
@@ -369,7 +398,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 result[row["community_id"]] = row["entities"]
             return result
         except Exception as e:
-            print(f"Community query error: {e}")
+            logger.info(f"Community query error: {e}")
             return {}
 
     async def get_community_entities(
@@ -422,7 +451,7 @@ class Neo4jStore(GraphStore, VectorStore):
             
             return component_count
         except Exception as e:
-            print(f"Community assignment error (requires Neo4j GDS plugin): {e}")
+            logger.info(f"Community assignment error (requires Neo4j GDS plugin): {e}")
             return 0
 
     # ── Gap #5: Temporal queries ──────────────────────────────────────────────
@@ -533,7 +562,7 @@ class Neo4jStore(GraphStore, VectorStore):
                         results = [r for r in results if str(r.get(key, "")) == str(value)]
                 return results
         except Exception as e:
-            print(f"Vector search not available: {e}")
+            logger.info(f"Vector search not available: {e}")
             return await self._fallback_search(k)
 
     async def _fallback_search(self, k: int) -> List[Dict[str, Any]]:
@@ -676,7 +705,7 @@ class Neo4jStore(GraphStore, VectorStore):
             if results:
                 return results[0]["answer"]
         except Exception as e:
-            print(f"Semantic cache retrieval error: {e}")
+            logger.info(f"Semantic cache retrieval error: {e}")
         return None
 
     async def set_semantic_cache(self, original_query: str, answer: str, query_embedding: List[float]) -> None:
@@ -697,7 +726,7 @@ class Neo4jStore(GraphStore, VectorStore):
                 "embedding": query_embedding
             })
         except Exception as e:
-            print(f"Semantic cache storage error: {e}")
+            logger.info(f"Semantic cache storage error: {e}")
 
     # ── Chunk + entity helpers ────────────────────────────────────────────────
 

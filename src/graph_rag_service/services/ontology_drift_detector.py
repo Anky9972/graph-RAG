@@ -26,7 +26,7 @@ from ..config import settings
 class DriftReport(BaseModel):
     """Schema drift report surfaced by the OntologyDriftDetector"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     new_entity_types: List[str] = Field(default_factory=list)
     new_relationship_types: List[str] = Field(default_factory=list)
     removed_entity_types: List[str] = Field(default_factory=list)

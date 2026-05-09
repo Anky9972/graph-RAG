@@ -25,7 +25,7 @@ class GraphUpdateResult(BaseModel):
     relationships_added: int = 0
     entities_merged: int = 0
     source_label: str = "api_push"
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     message: str = ""
 
 

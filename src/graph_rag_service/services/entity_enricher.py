@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 EntityEnricher: Entity Profile Summaries
 Traverses each entity's graph neighborhood and generates an LLM-synthesized
@@ -73,10 +75,11 @@ class EntityEnricher:
         )
         query = f"""
         MATCH (e:Entity)
-        WHERE apoc.node.degree(e) >= $min_connections
+        WITH e, size((e)--()) AS degree
+        WHERE degree >= $min_connections
         {where_clause}
         RETURN e.name as name, e.type as type
-        ORDER BY apoc.node.degree(e) DESC
+        ORDER BY degree DESC
         """
         try:
             rows = await self.store.execute_query(
@@ -205,5 +208,5 @@ and do not add information not implied by the relationships."""
             )
             return True
         except Exception as exc:
-            print(f"[EntityEnricher] Failed to enrich '{entity_name}': {exc}")
+            logger.info(f"[EntityEnricher] Failed to enrich '{entity_name}': {exc}")
             return False

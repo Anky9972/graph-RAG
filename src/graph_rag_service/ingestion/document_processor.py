@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Document processing and chunking
 Gap #9: Extended formats — CSV, Excel, PPTX, JSON (+ existing PDF, TXT, MD, DOCX)
@@ -53,7 +55,7 @@ class DocumentProcessor:
                     language="en",
                 )
             except Exception as e:
-                print(f"Warning: Failed to initialize LlamaParse: {e}")
+                logger.info(f"Warning: Failed to initialize LlamaParse: {e}")
                 self.llama_parser = None
 
     async def process_document(self, file_path: Path) -> Document:
@@ -147,15 +149,15 @@ class DocumentProcessor:
         """Extract text from PDF using LlamaParse (if available) or pypdf"""
         if self.llama_parser:
             try:
-                print(f"Using LlamaParse for {file_path.name}...")
+                logger.info(f"Using LlamaParse for {file_path.name}...")
                 documents = await self.llama_parser.aload_data(str(file_path))
                 text = "\n\n".join([doc.text for doc in documents])
-                print(f"✓ LlamaParse extracted {len(text)} characters")
+                logger.info(f"✓ LlamaParse extracted {len(text)} characters")
                 return text.strip()
             except Exception as e:
-                print(f"Warning: LlamaParse failed, falling back to pypdf: {e}")
+                logger.info(f"Warning: LlamaParse failed, falling back to pypdf: {e}")
 
-        print(f"Using pypdf for {file_path.name}...")
+        logger.info(f"Using pypdf for {file_path.name}...")
         reader = PdfReader(str(file_path))
         text = ""
         for page_num, page in enumerate(reader.pages):

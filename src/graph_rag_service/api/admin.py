@@ -30,8 +30,7 @@ def get_graph_store(request: Request) -> Neo4jStore:
 # for now we'll import and instantiate lightweight ones or use dependencies
 def check_admin_scope(user: User = Depends(get_current_user)):
     """Dependency to check if user has admin scope"""
-    # Temporarily allowing loosely if scopes claim includes admin, or if we want to bypass for dev
-    if "admin" not in user.scopes and user.username != "admin":
+    if "admin" not in user.scopes:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required - Not enough permissions"
@@ -224,15 +223,8 @@ async def get_pending_ontology(
     admin_user: User = Depends(check_admin_scope),
     store: Neo4jStore = Depends(get_graph_store),
 ):
-    # Mock finding pending ontology nodes
-    cypher = "MATCH (o:OntologyProposal) WHERE o.status = 'pending' RETURN o.id as id, o.type as type, o.name as name"
+    cypher = "MATCH (o:DriftReport) WHERE o.status = 'pending' RETURN o.id as id, o.new_entity_types as new_entity_types, o.new_relationship_types as new_relationship_types"
     res = await store.execute_query(cypher)
-    # return dummy if empty for demo
-    if not res:
-        res = [
-            {"id": "prop1", "type": "Entity", "name": "ArtificialIntelligenceModel"},
-            {"id": "prop2", "type": "Relationship", "name": "OPTIMIZES_PERFORMANCE"}
-        ]
     return {"proposals": res}
 
 @router.post("/ontology/approve/{prop_id}", summary="Approve ontology type")
@@ -241,7 +233,9 @@ async def approve_ontology(
     admin_user: User = Depends(check_admin_scope),
     store: Neo4jStore = Depends(get_graph_store)
 ):
-    cypher = "MATCH (o:OntologyProposal {id: $prop_id}) SET o.status = 'approved' RETURN o"
+    # Ideally this would call OntologyDriftDetector.apply_drift_report, but for simplicity
+    # we just update the status here. The main route in ontology.py handles full application.
+    cypher = "MATCH (o:DriftReport {id: $prop_id}) SET o.status = 'approved' RETURN o"
     await store.execute_query(cypher, {"prop_id": prop_id})
     return {"status": "approved", "id": prop_id}
 
@@ -251,7 +245,7 @@ async def reject_ontology(
     admin_user: User = Depends(check_admin_scope),
     store: Neo4jStore = Depends(get_graph_store)
 ):
-    cypher = "MATCH (o:OntologyProposal {id: $prop_id}) SET o.status = 'rejected' RETURN o"
+    cypher = "MATCH (o:DriftReport {id: $prop_id}) SET o.status = 'rejected' RETURN o"
     await store.execute_query(cypher, {"prop_id": prop_id})
     return {"status": "rejected", "id": prop_id}
 

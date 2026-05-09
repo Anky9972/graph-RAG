@@ -6,6 +6,7 @@ Uses multi-stage blocking and semantic similarity
 import asyncio
 from typing import List, Dict, Any
 from difflib import SequenceMatcher
+from collections import OrderedDict
 import numpy as np
 
 from .abstractions import EntityResolver, LLMProvider
@@ -23,7 +24,7 @@ class SemanticEntityResolver(EntityResolver):
     
     def __init__(self, llm_provider: LLMProvider):
         self.llm = llm_provider
-        self.embedding_cache: Dict[str, List[float]] = {}
+        self.embedding_cache: OrderedDict[str, List[float]] = OrderedDict()
     
     async def resolve(
         self,
@@ -66,6 +67,12 @@ class SemanticEntityResolver(EntityResolver):
         
         duplicates = {}
         processed = set()
+        
+        # Pre-compute embeddings in batches to optimize API usage (O(n) instead of O(n^2))
+        batch_size = 50
+        for i in range(0, len(entities), batch_size):
+            batch = entities[i:i+batch_size]
+            await asyncio.gather(*[self._get_entity_embedding(e) for e in batch])
         
         for i, entity1 in enumerate(entities):
             if entity1.id in processed:
@@ -186,6 +193,7 @@ class SemanticEntityResolver(EntityResolver):
         cache_key = f"{entity.name}:{entity.type}"
         
         if cache_key in self.embedding_cache:
+            self.embedding_cache.move_to_end(cache_key)
             return self.embedding_cache[cache_key]
         
         # Create text representation of entity
@@ -197,7 +205,9 @@ class SemanticEntityResolver(EntityResolver):
         # Compute embedding
         embedding = await self.llm.embed(text)
         
-        # Cache it
+        # Cache it with LRU eviction (max 10,000 items)
         self.embedding_cache[cache_key] = embedding
-        
+        if len(self.embedding_cache) > 10000:
+            self.embedding_cache.popitem(last=False)
+            
         return embedding

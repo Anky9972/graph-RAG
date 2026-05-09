@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Retrieval tools for the agentic system
 Gap #1: HybridSearchTool — BM25 + Vector with RRF fusion
@@ -38,7 +40,8 @@ class HybridSearchTool:
         query: str,
         k: int = None,
         filter: Optional[Dict] = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Run both BM25 and vector search in parallel, then fuse with RRF.
@@ -184,7 +187,8 @@ class CommunitySummaryTool:
     async def run(
         self,
         query: str,
-        k: int = None
+        k: int = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         1. Find relevant entities via hybrid search
@@ -298,7 +302,7 @@ Be specific and factual. Do not hallucinate relationships not implied by the ent
 
             return summary
         except Exception as e:
-            print(f"Community summary generation error: {e}")
+            logger.info(f"Community summary generation error: {e}")
             return None
 
 
@@ -318,7 +322,8 @@ class GraphTraversalTool:
         query: str,
         source_entity: Optional[str] = None,
         target_entity: Optional[str] = None,
-        depth: int = None
+        depth: int = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         depth = depth or settings.graph_max_depth
 
@@ -399,7 +404,7 @@ class CypherGenerationTool:
                 r["retrieval_method"] = "cypher"
             return results
         except Exception as e:
-            print(f"Cypher execution error: {e}")
+            logger.info(f"Cypher execution error: {e}")
             cypher = await self._correct_cypher_with_error(cypher, query, str(e))
             try:
                 results = await self.store.execute_query(cypher)
@@ -642,7 +647,7 @@ Return ONLY valid JSON (no markdown, no extra text):
                 "hallucination_risk": risk
             }
         except Exception as e:
-            print(f"LLM Judge error: {e}")
+            logger.info(f"LLM Judge error: {e}")
             # Fallback: use a simple heuristic
             base_score = min(1.0, len(contexts) / max(settings.default_top_k, 1))
             return {
@@ -831,15 +836,15 @@ class EntitySummarySearchTool:
                     "retrieval_method": "entity_summary",
                 })
         except Exception as exc:
-            print(f"[EntitySummarySearch BM25] {exc}")
+            logger.info(f"[EntitySummarySearch BM25] {exc}")
 
         # Strategy 2: Fallback — keyword match on entity names in graph
         if not results:
             try:
                 import re as _re
                 # SECURITY: sanitize each word before string-interpolating into Cypher.
-                # Only keep alphanumeric / hyphen / underscore chars to prevent injection.
-                _safe_word = _re.compile(r"^[\w\-]+$")
+                # Only keep basic alphanumeric / hyphen chars to prevent unicode/injection.
+                _safe_word = _re.compile(r"^[A-Za-z0-9\-]+$")
                 words = [
                     w for w in query.split()
                     if len(w) > 3 and _safe_word.match(w)
@@ -871,6 +876,6 @@ class EntitySummarySearchTool:
                             "retrieval_method": "entity_summary_fallback",
                         })
             except Exception as exc:
-                print(f"[EntitySummarySearch fallback] {exc}")
+                logger.info(f"[EntitySummarySearch fallback] {exc}")
 
         return results[:k]

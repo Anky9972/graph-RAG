@@ -110,7 +110,7 @@ class Document(BaseModel):
     file_type: str
     content: Optional[str] = None
     size_bytes: int
-    upload_date: datetime = Field(default_factory=datetime.utcnow)
+    upload_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     processed: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
     tenant_id: Optional[str] = None
@@ -122,7 +122,7 @@ class OntologySchema(BaseModel):
     entity_types: List[str] = Field(default_factory=list)
     relationship_types: List[str] = Field(default_factory=list)
     properties: Dict[str, List[str]] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     approved: bool = False
 
 
@@ -190,7 +190,7 @@ class EvalResult(BaseModel):
     context_recall: float = Field(default=0.0, ge=0.0, le=1.0)
     overall_score: float = Field(..., ge=0.0, le=1.0)
     hallucination_detected: bool = False
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     document_id: Optional[str] = None
 
 
@@ -202,4 +202,4 @@ class CommunityReport(BaseModel):
     summary: str
     themes: List[str] = Field(default_factory=list)
     relevance_score: float = 0.0
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

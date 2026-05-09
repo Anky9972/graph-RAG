@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 Configuration management for Graph RAG Service
 Extended with: temporal, multi-tenant, eval, semantic-cache, hybrid search, GoT settings
@@ -148,7 +150,7 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("data/uploads").resolve()
 
     # Frontend Path
-    frontend_dist_dir: Path = Path("../frontend-react/dist").resolve()
+    frontend_dist_dir: Path = Path(__file__).parent.parent.parent / "frontend-react" / "dist"
 
     # Observability
     enable_tracing: bool = False
@@ -176,11 +178,11 @@ class Settings(BaseSettings):
     def model_post_init(self, __context):
         """Fallback to local Ollama if cloud API keys are missing"""
         if self.default_llm_provider == "gemini" and not self.google_api_key:
-            print("WARNING: No GOOGLE_API_KEY found. Falling back to Ollama for LLM.")
+            logger.info("WARNING: No GOOGLE_API_KEY found. Falling back to Ollama for LLM.")
             self.default_llm_provider = "ollama"
 
         if self.embedding_provider == "gemini" and not self.google_api_key:
-            print("WARNING: No GOOGLE_API_KEY found. Falling back to Ollama for embeddings.")
+            logger.info("WARNING: No GOOGLE_API_KEY found. Falling back to Ollama for embeddings.")
             self.embedding_provider = "ollama"
 
     def get_llm_config(self, provider: Optional[str] = None) -> dict:

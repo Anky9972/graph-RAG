@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 ReportAgent — Full ReACT Analytical Agent
 Replaces the 72-line stub with a complete ReACT (Reasoning + Acting) loop
@@ -37,7 +39,7 @@ class ReportResult(BaseModel):
     key_entities: List[str] = Field(default_factory=list)
     confidence: float = 0.0
     tool_calls_made: int = 0
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     markdown: str = ""
 
 
@@ -183,7 +185,7 @@ class PanoramaSearchTool:
                 })
             return results
         except Exception as exc:
-            print(f"[PanoramaSearch] Error: {exc}")
+            logger.info(f"[PanoramaSearch] Error: {exc}")
             return []
 
 
@@ -489,7 +491,7 @@ Otherwise, deeply analyze the observations in a step-by-step thought and pick th
             elif tool_name == "QuickSearch":
                 return await self.quick_search.run(tool_arg)
         except Exception as exc:
-            print(f"[ReportAgent] Tool {tool_name} failed: {exc}")
+            logger.info(f"[ReportAgent] Tool {tool_name} failed: {exc}")
         return []
 
     async def _write_section_with_confidence(

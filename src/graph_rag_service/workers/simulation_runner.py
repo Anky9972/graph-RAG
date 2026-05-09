@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 """
 MiroFish Point 4: Continuous Multi-Agent Sandbox (Parallel Execution)
 MiroFish Point 1: Dynamic Graph Evolution (Living Knowledge Graph)
@@ -130,5 +132,5 @@ class SimulationManager:
             return True
             
         except Exception as e:
-            print(f"Simulation failed for {agent['name']}: {e}")
+            logger.info(f"Simulation failed for {agent['name']}: {e}")
             return False

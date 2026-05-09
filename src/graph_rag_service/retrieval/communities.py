@@ -136,29 +136,29 @@ class CommunityBuilder:
         if not batch_data:
             return
 
-        # 2. Write communities with parameterized UNWIND
-        write_query = f"""
+        # 2. Write communities with parameterized UNWIND — NO string interpolation
+        write_query = """
         UNWIND $batch AS item
         MATCH (n:Entity) WHERE id(n) = item.node_id
-        
-        MERGE (c0:Community {{id: "0:" + toString(item.comms[0])}})
-        SET c0.level = 0
-        {f", c0.tenant_id = '{tenant_id}'" if tenant_id else ""}
+
+        MERGE (c0:Community {id: "0:" + toString(item.comms[0])})
+        SET c0.level = 0,
+            c0.tenant_id = $tenant_id
         MERGE (n)-[:IN_COMMUNITY]->(c0)
-        
-        WITH item.comms AS comms
+
+        WITH item, item.comms AS comms
         WHERE size(comms) > 1
         UNWIND range(0, size(comms)-2) AS level
-        MERGE (c1:Community {{id: toString(level) + ":" + toString(comms[level])}})
-        SET c1.level = level
-        {f", c1.tenant_id = '{tenant_id}'" if tenant_id else ""}
-        MERGE (c2:Community {{id: toString(level+1) + ":" + toString(comms[level+1])}})
-        SET c2.level = level+1
-        {f", c2.tenant_id = '{tenant_id}'" if tenant_id else ""}
+        MERGE (c1:Community {id: toString(level) + ":" + toString(comms[level])})
+        SET c1.level = level,
+            c1.tenant_id = $tenant_id
+        MERGE (c2:Community {id: toString(level+1) + ":" + toString(comms[level+1])})
+        SET c2.level = level+1,
+            c2.tenant_id = $tenant_id
         MERGE (c1)-[:PARENT]->(c2)
         """
-        
-        await self.store.execute_query(write_query, {"batch": batch_data})
+
+        await self.store.execute_query(write_query, {"batch": batch_data, "tenant_id": tenant_id})
         logger.info(f"Community nodes and IN_COMMUNITY relationships created for tenant {tenant_id}")
 
     async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -235,30 +235,43 @@ class CommunityBuilder:
         """
         
         response = await self.llm.complete(prompt, temperature=0.2)
+
+        # Fetch actual community level from graph node (before parsing so we always have it)
+        level_res = await self.store.execute_query(
+            "MATCH (c:Community {id: $community_id}) RETURN coalesce(c.level, 0) AS level",
+            {"community_id": community_id}
+        )
+        community_level = level_res[0]["level"] if level_res else 0
+
+        # Build valid chunk ID set for citation validation
+        valid_chunk_ids = {e["chunk_id"] for e in evidence}
+
         try:
             cleaned = response.strip()
             if "```json" in cleaned:
                 cleaned = cleaned.split("```json")[1].split("```")[0]
             elif "```" in cleaned:
                 cleaned = cleaned.split("```")[1].split("```")[0]
-                
+
             data = json.loads(cleaned.strip())
-            
+
             report = CommunityReport(
                 community_id=community_id,
-                level=0,
+                level=community_level,
                 title=data.get("title", f"Community {community_id}"),
                 summary=data.get("summary", ""),
                 findings=data.get("findings", []),
                 entities=entities,
                 tenant_id=tenant_id
             )
-            
-            # Extract ALL chunk IDs used in findings
+
+            # Validate chunk citations against real evidence; extract used IDs
             used_chunk_ids = []
-            for f in report.findings:
-                if isinstance(f, dict) and "supporting_chunk_ids" in f:
-                    used_chunk_ids.extend(f["supporting_chunk_ids"])
+            for finding in report.findings:
+                finding.supporting_chunk_ids = [
+                    cid for cid in finding.supporting_chunk_ids if cid in valid_chunk_ids
+                ]
+                used_chunk_ids.extend(finding.supporting_chunk_ids)
             used_chunk_ids = list(set(used_chunk_ids))
 
             # Store report in graph
@@ -275,13 +288,13 @@ class CommunityBuilder:
                 "tenant_id": tenant_id,
                 "title": report.title,
                 "summary": report.summary,
-                "report_json": json.dumps(data),
+                "report_json": report.model_dump_json(),
                 "evidence_chunk_ids": used_chunk_ids
             })
-            
+
             # Embed report for global community search
             await self.embed_report(report)
-            
+
             return report
         except Exception as e:
             logger.error(f"Failed to generate report for community {community_id}: {e}")

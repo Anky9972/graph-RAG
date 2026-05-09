@@ -98,12 +98,13 @@ def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
         print(f"Failed to load dataset from HF: {e}. Falling back to mock dataset.")
         return HOTPOT_QA_SAMPLE
 
-async def create_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
+async def create_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig):
+    """Returns (token, tenant_id) for the isolated benchmark tenant."""
     timestamp = int(time.time())
     username = f"benchmark_user_{timestamp}"
     tenant_id = f"benchmark_run_{timestamp}"
     password = "password123"
-    
+
     register_url = f"{config.base_url}/api/auth/register"
     payload = {
         "username": username,
@@ -113,20 +114,22 @@ async def create_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkCo
         "scopes": ["read", "write"],
         "tenant_id": tenant_id
     }
-    
+
     try:
         res = await client.post(register_url, json=payload, timeout=10.0)
         res.raise_for_status()
-        
+
         login_url = f"{config.base_url}/api/auth/login"
         login_payload = {"username": username, "password": password}
         login_res = await client.post(login_url, json=login_payload, timeout=10.0)
         login_res.raise_for_status()
+        token = login_res.json()["access_token"]
         print(f"  Created isolated tenant: {tenant_id}")
-        return login_res.json()["access_token"]
+        return token, tenant_id
     except Exception as e:
         print(f"  Failed to create isolated tenant: {e}. Falling back to default admin.")
-        return await authenticate(client, config)
+        token = await authenticate(client, config)
+        return token, "admin"
 
 async def authenticate(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
     login_url = f"{config.base_url}/api/auth/login"
@@ -240,10 +243,7 @@ async def run_benchmark():
         # Authenticate first
         # Create isolated tenant for benchmark
         print("\nCreating isolated benchmark tenant...")
-        token = await create_benchmark_tenant(client, config)
-        benchmark_tenant_id = f"benchmark_run_{int(time.time())}"
-        # If tenant creation succeeded, the tenant ID is encoded in the JWT.
-        # We track it separately for cleanup.
+        token, benchmark_tenant_id = await create_benchmark_tenant(client, config)
 
         has_community_mode = any(m in config.modes for m in ["global_community", "hippo"])
         
@@ -289,10 +289,11 @@ async def run_benchmark():
         avg_f1 = stats["f1"] / stats["total"] if stats["total"] > 0 else 0
         print(f"Mode: {m:<15} | Accuracy: {accuracy:>5.1f}% | Avg F1: {avg_f1:.3f} | Avg Time: {avg_time:>5.2f}s")
 
-    # Cleanup: remove all benchmark tenant data
-    async with httpx.AsyncClient() as cleanup_client:
-        token_cleanup = await authenticate(cleanup_client, BenchmarkConfig())
-        await cleanup_benchmark_tenant(cleanup_client, config, token_cleanup, benchmark_tenant_id)
+    # Cleanup: remove all benchmark tenant data using admin token (purge-tenant requires admin scope)
+    if benchmark_tenant_id != "admin":
+        async with httpx.AsyncClient() as cleanup_client:
+            admin_token = await authenticate(cleanup_client, BenchmarkConfig())
+            await cleanup_benchmark_tenant(cleanup_client, config, admin_token, benchmark_tenant_id)
 
 if __name__ == "__main__":
     asyncio.run(run_benchmark())

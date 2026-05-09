@@ -100,7 +100,19 @@ class UnifiedLLMProvider(LLMProvider):
         """Generate completion from prompt with automatic rate-limit retry"""
         
         if self.provider_name == "mock":
-            return "This is a mock LLM response. Please set GOOGLE_API_KEY for real results."
+            # Return minimal valid JSON that matches what each task expects
+            p = prompt.lower()
+            if '"entities"' in prompt and '"relationships"' in prompt:
+                return '{"entities": [], "relationships": []}'
+            if '"findings"' in prompt or "community report" in p:
+                return '{"title": "Demo Community", "summary": "Mock community summary for demo mode.", "findings": []}'
+            if "return only a json list" in p or "sub-questions" in p or "decompose" in p:
+                return '["demo query"]'
+            if "ontology" in p or '"entity_types"' in prompt:
+                return '{"entity_types": ["Person", "Organization", "Concept"], "relationship_types": ["RELATED_TO", "PART_OF"], "properties": {}}'
+            if "cypher" in p or "match (" in p:
+                return "MATCH (n) RETURN n LIMIT 0"
+            return '{"answer": "Mock response. Set GOOGLE_API_KEY for real results.", "confidence": 0.0}'
             
         messages = []
         if system_prompt:

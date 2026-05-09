@@ -81,21 +81,37 @@ export DEMO_MODE=true\n\
 export ENVIRONMENT=production\n\
 export SECRET_KEY=demo-secret-key-1234567890\n\
 \n\
-if [ -z "$GEMINI_API_KEY" ]; then\n\
+if [ -z "$GOOGLE_API_KEY" ]; then\n\
     export DEFAULT_LLM_PROVIDER=ollama\n\
 else\n\
     export DEFAULT_LLM_PROVIDER=gemini\n\
 fi\n\
 \n\
-# Create default admin user\n\
+# Create default admin user in Neo4j\n\
 python -c "\n\
+import asyncio\n\
+from src.graph_rag_service.core.neo4j_store import Neo4jStore\n\
 from src.graph_rag_service.api.auth import get_password_hash\n\
-import redis\n\
-r = redis.Redis(host='\''localhost'\'', port=6379, db=0)\n\
-user_data = {'\''username'\'': '\''admin'\'', '\''password_hash'\'': get_password_hash('\''admin'\''), '\''tenant_id'\'': '\''demo_tenant'\''}\n\
-import json\n\
-r.set('\''user:admin'\'', json.dumps(user_data))\n\
-print('\''Admin user created'\'')\n\
+\n\
+async def main():\n\
+    store = Neo4jStore()\n\
+    await store.connect()\n\
+    try:\n\
+        await store.create_user({\n\
+            '\''username'\'': '\''admin'\'',\n\
+            '\''hashed_password'\'': get_password_hash('\''admin'\''),\n\
+            '\''email'\'': '\''admin@example.com'\'',\n\
+            '\''full_name'\'': '\''Demo Admin'\'',\n\
+            '\''disabled'\'': False,\n\
+            '\''scopes'\'': ['\''read'\'', '\''write'\'', '\''admin'\''],\n\
+            '\''tenant_id'\'': '\''demo_tenant'\'',\n\
+        })\n\
+        print('\''Admin user created in Neo4j'\'')\n\
+    except Exception as e:\n\
+        print(f'\''Admin user creation note: {e}'\'')\n\
+    await store.disconnect()\n\
+\n\
+asyncio.run(main())\n\
 "\n\
 \n\
 # Start FastAPI and serve static files (frontend)\n\

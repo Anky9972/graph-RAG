@@ -27,11 +27,21 @@ async def health_check(request: Request, response: Response):
     neo4j_connected = False
     redis_connected = False
     workers_active = 0
+    gds_version = None
     
     try:
         # Check Neo4j
         await request.app.state.graph_store.execute_query("RETURN 1")
         neo4j_connected = True
+        
+        # Check GDS
+        try:
+            gds_res = await request.app.state.graph_store.execute_query("RETURN gds.version() as version")
+            if gds_res:
+                gds_version = gds_res[0]["version"]
+        except Exception:
+            pass
+            
     except Exception as e:
         logger.error(f"Neo4j health check failed: {e}")
     
@@ -65,6 +75,7 @@ async def health_check(request: Request, response: Response):
         neo4j_connected=neo4j_connected,
         redis_connected=redis_connected,
         workers_active=workers_active,
+        gds_version=gds_version,
         timestamp=datetime.now(timezone.utc).replace(tzinfo=None)
     )
 

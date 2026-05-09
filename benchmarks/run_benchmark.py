@@ -10,17 +10,19 @@ HOTPOT_QA_SAMPLE = [
     {
         "question": "What is the capital of the country where the city of Lyon is located?",
         "ground_truth": "Paris",
+        "context": "Lyon is a city in France. The capital of France is Paris.",
         "type": "multi-hop"
     },
     {
         "question": "Which company acquired the startup that developed the Siri virtual assistant?",
         "ground_truth": "Apple",
+        "context": "Siri was originally developed by Siri Inc. Apple acquired Siri Inc. in 2010.",
         "type": "multi-hop"
     }
 ]
 
 class BenchmarkConfig(BaseModel):
-    api_url: str = "http://localhost:7860/api/query"
+    base_url: str = "http://localhost:7860"
     modes: List[str] = ["naive", "hybrid", "hippo", "global_community"]
     dataset: str = "hotpot_qa"
     num_samples: int = 10
@@ -41,9 +43,21 @@ def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
         for item in ds:
             if len(samples) >= config.num_samples:
                 break
+                
+            # Extract context text
+            context_text = ""
+            if "context" in item:
+                # HotpotQA format: lists of titles and sentences
+                if isinstance(item["context"], dict) and "sentences" in item["context"]:
+                    for sentences in item["context"]["sentences"]:
+                        context_text += " ".join(sentences) + " "
+                else:
+                    context_text = str(item["context"])
+                    
             samples.append({
                 "question": item.get("question", ""),
                 "ground_truth": item.get("answer", ""),
+                "context": context_text,
                 "type": item.get("level", "unknown")
             })
         return samples
@@ -54,7 +68,35 @@ def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
         print(f"Failed to load dataset from HF: {e}. Falling back to mock dataset.")
         return HOTPOT_QA_SAMPLE
 
-async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, mode: str, q: Dict[str, str]) -> Dict[str, Any]:
+async def authenticate(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
+    login_url = f"{config.base_url}/api/auth/login"
+    try:
+        response = await client.post(login_url, json={"username": "admin", "password": "admin"}, timeout=10.0)
+        response.raise_for_status()
+        return response.json().get("access_token", "")
+    except Exception as e:
+        print(f"Failed to authenticate with backend: {e}. Some endpoints may be inaccessible.")
+        return "test-token"
+
+async def ingest_context(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, q: Dict[str, str]):
+    if not q.get("context"):
+        return
+        
+    update_url = f"{config.base_url}/api/graph/update"
+    headers = {"Authorization": f"Bearer {token}"}
+    payload = {
+        "text": q["context"],
+        "source_label": "benchmark_ingest"
+    }
+    
+    try:
+        response = await client.post(update_url, json=payload, headers=headers, timeout=30.0)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"    [Warning] Failed to ingest context: {e}")
+
+async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, mode: str, q: Dict[str, str]) -> Dict[str, Any]:
+    query_url = f"{config.base_url}/api/query"
     payload = {
         "query": q["question"],
         "top_k": 5,
@@ -64,9 +106,9 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
     
     start_time = time.time()
     try:
-        headers = {"Authorization": "Bearer test-token"}
+        headers = {"Authorization": f"Bearer {token}"}
         
-        response = await client.post(config.api_url, json=payload, headers=headers, timeout=60.0)
+        response = await client.post(query_url, json=payload, headers=headers, timeout=60.0)
         response.raise_for_status()
         data = response.json()
         
@@ -103,11 +145,23 @@ async def run_benchmark():
     results = []
     
     async with httpx.AsyncClient() as client:
-        for q in dataset:
-            print(f"\nEvaluating Question: {q['question']}")
+        # Authenticate first
+        print("\nAuthenticating with backend...")
+        token = await authenticate(client, config)
+        
+        for i, q in enumerate(dataset):
+            print(f"\nEvaluating Question {i+1}/{len(dataset)}: {q['question']}")
+            
+            # Ingest context into knowledge graph
+            print(f"  Ingesting context into knowledge graph...")
+            await ingest_context(client, config, token, q)
+            
+            # Allow Neo4j indexing to catch up
+            await asyncio.sleep(1)
+            
             for mode in config.modes:
                 print(f"  Running mode: {mode}...")
-                res = await evaluate_question(client, config, mode, q)
+                res = await evaluate_question(client, config, token, mode, q)
                 results.append(res)
                 status = "PASS" if res.get("is_correct") else "FAIL"
                 print(f"    [{status}] Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")

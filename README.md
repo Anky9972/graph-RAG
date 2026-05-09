@@ -42,11 +42,14 @@
 ### 🤖 Agentic Retrieval System
 
 - **LangGraph orchestration**: State-machine ReACT agent with multi-step reasoning and fallback mechanisms
-- **Tool routing**: Dynamically selects from Vector Search, Graph Traversal, Cypher Generation, Metadata Filtering, Community Search, and Temporal Queries
+- **Tool routing**: Dynamically selects from Naive Vector, Hybrid, Metadata Filtering, Global Community Search, HippoRAG, Graph of Thoughts (GoT), and Cypher.
+- **Retrieval Modes**: Switch seamlessly between `AUTO`, `HYBRID`, `HIPPO-RAG`, `LOCAL GRAPH`, `GLOBAL COMMUNITY`, `GOT`, `CYPHER`, `NAIVE`, and `SIMULATION`.
 - **Streaming responses**: Server-Sent Events (SSE) with real-time reasoning steps surfaced in the UI
 - **Multi-turn conversations**: Persistent conversation threads stored in Neo4j, per-user
 - **Document-scoped queries**: Filter retrieval to a specific document via `document_id`
-- **Graph of Thoughts (GoT)**: Optional GoT reasoning mode for complex multi-hop queries
+- **Graph of Thoughts (GoT)**: Advanced multi-hop reasoning mode exploring the graph neighborhood
+- **HippoRAG**: Personalized PageRank (PPR) fallback strategies mapped to entity seeding
+- **Global Community Search**: Vector similarity search over pre-computed hierarchical Leiden reports
 - **LLM-as-a-Judge (inline)**: Optional per-response quality scoring with hallucination risk, grounded/ungrounded claims, and confidence reasoning displayed in chat
 - **Confidence display**: Confidence score, hallucination risk, and judge reasoning shown directly in the chat bubble
 
@@ -60,7 +63,7 @@
 
 - **D3 force-directed visualization**: Interactive knowledge graph with zoom, pan, node selection, and a details modal
 - **Graph Export**: Export full or document-scoped graph as JSON, Cypher, or GraphML
-- **Community Detection**: Weakly-connected-components (WCC) community assignment with `POST /api/graph/communities/assign`
+- **Community Detection**: Hierarchical Leiden community clustering with `POST /api/graph/communities/assign`
 - **Community listing**: `GET /api/graph/communities` — top communities by entity count
 - **Temporal Queries**: `GET /api/entities/{entity_name}/at-time` — retrieve entity relationships at a historical point in time
 - **Semantic Entity Deduplication**: Multi-stage entity resolution with configurable similarity thresholds (`POST /api/entities/deduplicate`)
@@ -258,13 +261,14 @@ cp .env.example .env
 # Fill in NEO4J_URI, NEO4J_PASSWORD, and your LLM API keys
 ```
 
-### 3. Start Neo4j
+### 3. Start Neo4j (Requires GDS Plugin)
 
 ```bash
 docker run -d --name neo4j \
   -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/password \
-  neo4j:latest
+  -e NEO4J_PLUGINS='["graph-data-science", "apoc"]' \
+  neo4j:5.18.0
 ```
 
 ### 4. Start Redis
@@ -272,6 +276,10 @@ docker run -d --name neo4j \
 ```bash
 docker run -d --name redis -p 6379:6379 redis:alpine
 ```
+
+### Hugging Face Spaces / All-in-One Docker
+You can easily deploy CORTEX to Hugging Face Spaces or as a standalone container.
+Our `Dockerfile` automatically installs Python 3.12, Redis, Neo4j, and the GDS plugin to run the entire platform on a single port (`7860`).
 
 ### 5. Launch Everything
 
@@ -375,7 +383,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 | `GET` | `/api/graph/visualization` | Graph nodes + edges for D3 rendering |
 | `GET` | `/api/graph/export` | Export graph (json \| cypher \| graphml) |
 | `POST` | `/api/graph/update` | Push raw text → merge into live graph |
-| `POST` | `/api/graph/communities/assign` | Run WCC community detection |
+| `POST` | `/api/graph/communities/assign` | Run Hierarchical Leiden clustering & generate reports |
 | `GET` | `/api/graph/communities` | List top communities |
 
 ### Entities
@@ -420,7 +428,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing & Benchmarking
 
 ```bash
 # Run tests
@@ -428,6 +436,9 @@ uv run pytest
 
 # With coverage
 uv run pytest --cov=src/graph_rag_service
+
+# Run SOTA Benchmarks against Hugging Face datasets (e.g. HotpotQA, MuSiQue)
+uv run python benchmarks/run_benchmark.py
 ```
 
 ---

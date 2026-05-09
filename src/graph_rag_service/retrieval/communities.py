@@ -254,14 +254,18 @@ class CommunityBuilder:
         embedding = await self.llm.embed(text_to_embed)
         
         if embedding:
+            params = {
+                "community_id": report.community_id,
+                "embedding": embedding
+            }
+            if report.tenant_id:
+                params["tenant_id"] = report.tenant_id
+                
             await self.store.execute_query(f"""
                 MATCH (c:Community {{id: $community_id}})
                 {f"WHERE c.tenant_id = $tenant_id" if report.tenant_id else ""}
                 CALL db.create.setNodeVectorProperty(c, 'embedding', $embedding)
-            """, {
-                "community_id": report.community_id,
-                "embedding": embedding
-            })
+            """, params)
 
     async def generate_all_reports(self, tenant_id: Optional[str] = None) -> List[CommunityReport]:
         """Generate reports for all communities."""

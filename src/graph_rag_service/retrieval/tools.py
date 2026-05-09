@@ -238,10 +238,34 @@ class CommunitySummaryTool:
                     "retrieval_method": "global_community_search",
                     "score": row.get("score", 0.0)
                 })
-            return results
+                
+            if results:
+                return results
         except Exception as e:
             logger.error(f"Global community vector search failed: {e}")
-            return []
+            
+        # Fallback to lazy community summarization
+        results = []
+        try:
+            entity_names = await self._find_relevant_entities(query, limit=20, tenant_id=tenant_id)
+            if entity_names:
+                communities = await self.store.get_communities(entity_names, tenant_id=tenant_id)
+                if communities:
+                    for community_id, entities in list(communities.items())[:k]:
+                        summary = await self._get_community_summary(community_id, entities, query)
+                        if summary:
+                            results.append({
+                                "id": f"community_{community_id}",
+                                "text": summary,
+                                "community_id": community_id,
+                                "entity_count": len(entities),
+                                "retrieval_method": "community_summary_fallback",
+                                "score": 0.85
+                            })
+        except Exception as e:
+            logger.error(f"Lazy community fallback failed: {e}")
+            
+        return results
 
     async def _find_relevant_entities(self, query: str, limit: int = 20, tenant_id: Optional[str] = None) -> List[str]:
         """Find entity names most relevant to the query via BM25"""

@@ -494,13 +494,31 @@ const InsightsView: React.FC = () => {
       {/* ── COMMUNITIES TAB ── */}
       {activeTab === 'communities' && (
         <div>
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button className="app-btn mono-text" onClick={assignCommunities} disabled={communityLoading} style={{ padding: '0.75rem 1.5rem' }}>
               {communityLoading ? 'DETECTING...' : '⚡ DETECT COMMUNITIES'}
             </button>
             <span className="mono-text" style={{ fontSize: '0.8rem', color: '#666' }}>
               Run after ingesting documents to cluster entities into related groups (enables community search).
             </span>
+            {communities.length === 0 && !communityLoading && (
+              <span style={{ 
+                background: '#dc2626', 
+                color: '#fff', 
+                padding: '0.25rem 0.75rem', 
+                borderRadius: '4px', 
+                fontFamily: 'var(--font-mono)', 
+                fontSize: '0.75rem', 
+                fontWeight: 700, 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.35rem',
+                animation: 'pulse 2s infinite'
+              }}>
+                <AlertTriangle size={14} /> 
+                REQUIRED: GENERATE REPORTS
+              </span>
+            )}
           </div>
 
           {communities.length === 0 ? (

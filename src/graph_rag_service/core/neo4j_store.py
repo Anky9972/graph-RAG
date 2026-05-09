@@ -193,7 +193,8 @@ class Neo4jStore(GraphStore, VectorStore):
         MATCH (target:Entity)
         WHERE target.name = $target AND target.tenant_id = $tenant_id
         MERGE (source)-[r:`{rel_type}`]->(target)
-        SET r.properties = $properties,
+        SET r.tenant_id = $tenant_id,
+            r.properties = $properties,
             r.confidence = $confidence,
             r.ontology_version = $ontology_version,
             r.id = $id,

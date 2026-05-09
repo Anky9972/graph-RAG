@@ -179,6 +179,7 @@ class SystemHealthResponse(BaseModel):
     neo4j_connected: bool
     redis_connected: bool
     workers_active: int
+    gds_version: Optional[str] = None
     timestamp: datetime
 
 

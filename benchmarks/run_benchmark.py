@@ -213,12 +213,13 @@ async def build_communities(client: httpx.AsyncClient, config: BenchmarkConfig, 
 async def cleanup_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, tenant_id: str):
     """Delete all graph data for the benchmark tenant."""
     cleanup_url = f"{config.base_url}/api/graph/purge-tenant"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {token}"}
     try:
-        res = await client.delete(
-            cleanup_url, 
-            headers=headers, 
-            content=json.dumps({"tenant_id": tenant_id}), 
+        res = await client.request(
+            "DELETE",
+            cleanup_url,
+            headers=headers,
+            json={"tenant_id": tenant_id},
             timeout=30.0
         )
         res.raise_for_status()

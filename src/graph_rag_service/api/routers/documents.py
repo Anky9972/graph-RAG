@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from fastapi import status
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from ...core.neo4j_store import Neo4jStore
@@ -7,6 +9,8 @@ from ...ingestion.pipeline import IngestionPipeline
 from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
+from ...workers.celery_worker import ingest_document_task, celery_app
+from celery.result import AsyncResult
 import redis
 from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 

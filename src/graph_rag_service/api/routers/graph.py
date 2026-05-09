@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query, Body
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
 from ...core.neo4j_store import Neo4jStore
 from ...retrieval.agent import AgentRetrievalSystem
@@ -281,7 +282,7 @@ async def update_graph_from_text(
 @router.delete("/api/graph/purge-tenant", tags=["Graph"])
 async def purge_tenant_data(
     request: Request,
-    payload: dict,
+    payload: Dict[str, Any] = Body(...),
     current_user: User = Depends(get_current_user)
 ):
     """

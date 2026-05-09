@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 
 from ...core.neo4j_store import Neo4jStore
@@ -8,6 +9,7 @@ from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
 import redis
+from datetime import datetime, timezone
 from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
 
 router = APIRouter()
@@ -29,7 +31,7 @@ async def query(
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
     # 1. Initialize conversation and user message in Neo4j
-    now_str = datetime.now().isoformat()
+    now_str = datetime.now(timezone.utc).isoformat()
     init_query = """
     MATCH (u:User {username: $username})
     MERGE (u)-[:HAS_CONVERSATION]->(c:Conversation {id: $conversation_id})
@@ -69,7 +71,7 @@ async def query(
                 
         await request.app.state.graph_store.execute_query(save_query, {
             "conversation_id": conversation_id,
-            "now": datetime.now().isoformat(),
+            "now": datetime.now(timezone.utc).isoformat(),
             "msg_id": str(uuid.uuid4()),
             "content": content,
             "reasoning": json.dumps(reasoning),
@@ -113,7 +115,6 @@ async def query(
                     yield f"data: {json.dumps(payload, default=str)}\n\n"
 
             if final_answer and final_sources:
-                from src.graph_rag_service.config import settings
                 if settings.enable_llm_judge:
                     yield f"data: {json.dumps({'type': 'step', 'content': 'LLM Judge verifying context grounding...'})}\n\n"
                     try:

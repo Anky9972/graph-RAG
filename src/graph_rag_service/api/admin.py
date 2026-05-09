@@ -135,11 +135,20 @@ async def force_merge_entities(
     """Admin override to merge two nodes"""
     try:
         query = '''
-        MATCH (source:Entity {id: $source_id})
-        MATCH (target:Entity {id: $target_id})
-        CALL apoc.refactor.mergeNodes([target, source], {properties:"combine", mergeRels:true})
-        YIELD node
-        RETURN node.id as id
+        MATCH (e1:Entity {id: $source_id})
+        MATCH (e2:Entity {id: $target_id})
+        SET e1.properties = e1.properties + e2.properties
+        WITH e1, e2
+        MATCH (e2)-[r]->(other)
+        MERGE (e1)-[r2:RELATED_TO]->(other)
+        SET r2 = properties(r)
+        WITH e1, e2
+        MATCH (other)-[r]->(e2)
+        MERGE (other)-[r2:RELATED_TO]->(e1)
+        SET r2 = properties(r)
+        WITH e1, e2
+        DETACH DELETE e2
+        RETURN e1.id as id
         '''
         res = await store.execute_query(query, {"source_id": source_id, "target_id": target_id})
         return {"status": "merged", "result": res}
@@ -233,10 +242,18 @@ async def approve_ontology(
     admin_user: User = Depends(check_admin_scope),
     store: Neo4jStore = Depends(get_graph_store)
 ):
-    # Ideally this would call OntologyDriftDetector.apply_drift_report, but for simplicity
-    # we just update the status here. The main route in ontology.py handles full application.
-    cypher = "MATCH (o:DriftReport {id: $prop_id}) SET o.status = 'approved' RETURN o"
-    await store.execute_query(cypher, {"prop_id": prop_id})
+    from ..services.ontology_drift_detector import OntologyDriftDetector
+    from ..config import settings
+    detector = OntologyDriftDetector(
+        graph_store=store,
+        llm_provider=settings.default_llm_provider,
+    )
+    success = await detector.apply_drift_report(
+        report_id=prop_id,
+        approved_by=admin_user.username,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Drift report not found")
     return {"status": "approved", "id": prop_id}
 
 @router.post("/ontology/reject/{prop_id}", summary="Reject ontology type")
@@ -258,13 +275,9 @@ async def list_users(
 ):
     cypher = "MATCH (u:User) RETURN u.username as username, u.scopes as scopes, u.disabled as disabled"
     res = await store.execute_query(cypher)
-    # Mock fallback if user node isn't implemented exactly this way
+    # Return empty list if no users
     if not res:
-        res = [
-            {"username": "admin", "scopes": ["read", "write", "admin"], "disabled": False},
-            {"username": "analyst1", "scopes": ["read", "write"], "disabled": False},
-            {"username": "guest", "scopes": ["read"], "disabled": False}
-        ]
+        res = []
     return {"users": res}
 
 @router.put("/users/{username}/role", summary="Update user role/scopes")

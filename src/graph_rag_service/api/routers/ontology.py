@@ -1,12 +1,14 @@
 from datetime import timezone
 from datetime import timezone
 import os
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query, status
 from typing import List, Dict, Any, Optional
 
 from ...core.neo4j_store import Neo4jStore
 from ...retrieval.agent import AgentRetrievalSystem
 from ...ingestion.pipeline import IngestionPipeline
+from ...ingestion.ontology_generator import OntologyGenerator
+from ...services.ontology_drift_detector import OntologyDriftDetector
 from ...config import settings
 from ...api.models import *
 from ...api.auth import get_current_user, User
@@ -290,16 +292,6 @@ async def reject_drift_report(request: Request,
 
 
 
-else:
-    @router.get("/", tags=["Root"])
-    async def root():
-        """Root endpoint (fallback when frontend is not built)"""
-        return {
-            "service": settings.app_name,
-            "version": settings.app_version,
-            "status": "running",
-            "docs": "/docs",
-            "message": "Frontend build not mounted. Please build the React app or check FRONTEND_DIST path."
-        }
+
 
 

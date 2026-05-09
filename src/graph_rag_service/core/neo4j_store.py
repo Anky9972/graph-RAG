@@ -220,15 +220,11 @@ class Neo4jStore(GraphStore, VectorStore):
         """Execute a Cypher query with timeout"""
         params = params or {}
         async with self.driver.session(database=self.database) as session:
+            async def _fetch():
+                result = await session.run(query, parameters=params)
+                return await result.data()
             try:
-                result = await asyncio.wait_for(
-                    session.run(query, parameters=params), 
-                    timeout=timeout_seconds
-                )
-                records = await asyncio.wait_for(
-                    result.data(), 
-                    timeout=timeout_seconds
-                )
+                records = await asyncio.wait_for(_fetch(), timeout=timeout_seconds)
                 return records
             except asyncio.TimeoutError:
                 raise TimeoutError(f"Cypher query execution timed out after {timeout_seconds} seconds")
@@ -261,9 +257,6 @@ class Neo4jStore(GraphStore, VectorStore):
         """
 
         async with self.driver.session(database=self.database) as session:
-            params = {"source": source, "target": target}
-            if tenant_id:
-                params["tenant_id"] = tenant_id
             result = await session.run(query, **params)
             paths = await result.data()
             return paths
@@ -275,9 +268,14 @@ class Neo4jStore(GraphStore, VectorStore):
         tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get neighboring entities"""
+        try:
+            safe_depth = int(depth)
+        except (ValueError, TypeError):
+            safe_depth = 1
+
         tenant_filter = "WHERE e.tenant_id = $tenant_id" if tenant_id else ""
         query = f"""
-        MATCH (e:Entity {{name: $name}})-[r*1..{depth}]-(neighbor:Entity)
+        MATCH (e:Entity {{name: $name}})-[r*1..{safe_depth}]-(neighbor:Entity)
         {tenant_filter}
         RETURN DISTINCT neighbor.name as name,
                neighbor.type as type,

@@ -446,13 +446,13 @@ class CypherGenerationTool:
         if not cypher:
             return []
 
-        if tenant_id and tenant_id not in cypher:
-            logger.warning("Cypher query rejected: Generated query did not include the required tenant_id filter.")
+        if not self._tenant_safe(cypher, tenant_id):
+            logger.warning("Cypher query rejected: failed tenant safety check.")
             return []
 
         if not self._validate_cypher(cypher):
             cypher = await self._correct_cypher(cypher, query)
-            if not self._validate_cypher(cypher) or (tenant_id and tenant_id not in cypher):
+            if not self._validate_cypher(cypher) or not self._tenant_safe(cypher, tenant_id):
                 return []
 
         try:
@@ -481,7 +481,10 @@ Graph Schema:
 """
         tenant_instruction = ""
         if tenant_id:
-            tenant_instruction = f"7. ALWAYS filter by tenant_id = '{tenant_id}' on MATCHed nodes (e.g., `WHERE n.tenant_id = '{tenant_id}'`)."
+            # Sanitize tenant_id for safe embedding in prompt (only alphanumeric + _ -)
+            import re as _re
+            safe_tid = _re.sub(r'[^A-Za-z0-9_\-]', '', tenant_id)
+            tenant_instruction = f"7. ALWAYS filter by tenant_id = '{safe_tid}' on ALL MATCHed nodes (e.g., `WHERE n.tenant_id = '{safe_tid}'`). Every MATCH clause must be tenant-filtered."
 
         prompt = f"""
 You are a Cypher query generator. Generate a READ-ONLY Cypher query for Neo4j.
@@ -511,6 +514,23 @@ Return only the Cypher query, no explanation.
         elif "```" in cypher:
             cypher = cypher.split("```")[1].split("```")[0]
         return cypher.strip()
+
+    def _tenant_safe(self, cypher: str, tenant_id: Optional[str]) -> bool:
+        """Check that Cypher passes tenant safety: no comments, proper tenant filter."""
+        if not tenant_id:
+            return True
+        import re as _re
+        # Reject Cypher with comment syntax (could bypass string-check)
+        if "//" in cypher or "/*" in cypher:
+            logger.warning("Cypher rejected: contains comment syntax")
+            return False
+        # Require a tenant_id filter that matches the actual tenant value
+        tid_escaped = _re.escape(tenant_id)
+        pattern = rf"tenant_id\s*=\s*['\"]?{tid_escaped}['\"]?"
+        if not _re.search(pattern, cypher, _re.IGNORECASE):
+            logger.warning("Cypher rejected: no matching tenant_id filter found")
+            return False
+        return True
 
     def _validate_cypher(self, cypher: str) -> bool:
         if not cypher:

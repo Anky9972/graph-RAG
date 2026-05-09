@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 
 from ..core.neo4j_store import Neo4jStore
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class CommunityFinding(BaseModel):
     text: str
-    supporting_chunk_ids: List[str] = []
+    supporting_chunk_ids: List[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 class CommunityReport(BaseModel):
@@ -18,8 +18,8 @@ class CommunityReport(BaseModel):
     level: int
     title: str
     summary: str
-    findings: List[CommunityFinding]
-    entities: List[str]
+    findings: List[CommunityFinding] = Field(default_factory=list)
+    entities: List[str] = Field(default_factory=list)
     tenant_id: Optional[str] = None
 
 class CommunityBuilder:
@@ -137,49 +137,61 @@ class CommunityBuilder:
             return
 
         # 2. Write communities with parameterized UNWIND — NO string interpolation
+        # Community IDs are tenant-scoped to prevent cross-tenant node collisions.
+        tid_prefix = (tenant_id + ":") if tenant_id else ""
         write_query = """
         UNWIND $batch AS item
         MATCH (n:Entity) WHERE id(n) = item.node_id
 
-        MERGE (c0:Community {id: "0:" + toString(item.comms[0])})
+        MERGE (c0:Community {id: $tid_prefix + "0:" + toString(item.comms[0])})
         SET c0.level = 0,
-            c0.tenant_id = $tenant_id
+            c0.tenant_id = $tenant_id,
+            c0.local_id = "0:" + toString(item.comms[0])
         MERGE (n)-[:IN_COMMUNITY]->(c0)
 
         WITH item, item.comms AS comms
         WHERE size(comms) > 1
         UNWIND range(0, size(comms)-2) AS level
-        MERGE (c1:Community {id: toString(level) + ":" + toString(comms[level])})
+        MERGE (c1:Community {id: $tid_prefix + toString(level) + ":" + toString(comms[level])})
         SET c1.level = level,
-            c1.tenant_id = $tenant_id
-        MERGE (c2:Community {id: toString(level+1) + ":" + toString(comms[level+1])})
+            c1.tenant_id = $tenant_id,
+            c1.local_id = toString(level) + ":" + toString(comms[level])
+        MERGE (c2:Community {id: $tid_prefix + toString(level+1) + ":" + toString(comms[level+1])})
         SET c2.level = level+1,
-            c2.tenant_id = $tenant_id
+            c2.tenant_id = $tenant_id,
+            c2.local_id = toString(level+1) + ":" + toString(comms[level+1])
         MERGE (c1)-[:PARENT]->(c2)
         """
 
-        await self.store.execute_query(write_query, {"batch": batch_data, "tenant_id": tenant_id})
+        await self.store.execute_query(write_query, {
+            "batch": batch_data,
+            "tenant_id": tenant_id,
+            "tid_prefix": tid_prefix
+        })
         logger.info(f"Community nodes and IN_COMMUNITY relationships created for tenant {tenant_id}")
 
     async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Collects chunks related to the entities in a community.
+        Collects chunks related to the entities in a community, fully tenant-scoped.
         """
-        tenant_filter = "WHERE c.tenant_id = $tenant_id" if tenant_id else ""
-        
+        comm_filter = "AND comm.tenant_id = $tenant_id" if tenant_id else ""
+        entity_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
+        chunk_filter = "AND c.tenant_id = $tenant_id" if tenant_id else ""
+
         query = f"""
         MATCH (comm:Community {{id: $community_id}})<-[:IN_COMMUNITY]-(e:Entity)
+        WHERE 1=1 {comm_filter} {entity_filter}
         MATCH (c:Chunk)-[:MENTIONS]->(e)
-        {tenant_filter}
+        WHERE 1=1 {chunk_filter}
         RETURN DISTINCT c.id AS chunk_id, c.text AS text, c.document_id AS document_id
         LIMIT 50
         """
-        
+
         results = await self.store.execute_query(query, {
             "community_id": community_id,
             "tenant_id": tenant_id
         })
-        
+
         return [{"chunk_id": r.get('chunk_id'), "text": r.get('text'), "document_id": r.get('document_id')} for r in results]
 
     async def generate_report(self, community_id: str, tenant_id: Optional[str] = None) -> Optional[CommunityReport]:
@@ -236,10 +248,11 @@ class CommunityBuilder:
         
         response = await self.llm.complete(prompt, temperature=0.2)
 
-        # Fetch actual community level from graph node (before parsing so we always have it)
+        # Fetch actual community level from graph node — tenant-scoped
+        level_match = "MATCH (c:Community {id: $community_id, tenant_id: $tenant_id})" if tenant_id else "MATCH (c:Community {id: $community_id})"
         level_res = await self.store.execute_query(
-            "MATCH (c:Community {id: $community_id}) RETURN coalesce(c.level, 0) AS level",
-            {"community_id": community_id}
+            f"{level_match} RETURN coalesce(c.level, 0) AS level",
+            {"community_id": community_id, "tenant_id": tenant_id}
         )
         community_level = level_res[0]["level"] if level_res else 0
 

@@ -103,7 +103,12 @@ class UnifiedLLMProvider(LLMProvider):
             # Return minimal valid JSON that matches what each task expects
             p = prompt.lower()
             if '"entities"' in prompt and '"relationships"' in prompt:
-                return '{"entities": [], "relationships": []}'
+                # Extract capitalized words as demo entities so graph has something
+                import re as _re
+                words = _re.findall(r'\b[A-Z][a-z]{2,}\b', prompt)
+                unique_words = list(dict.fromkeys(words))[:5]
+                demo_entities = [{"name": w, "type": "Concept", "description": f"Demo entity: {w}"} for w in unique_words] or [{"name": "Demo Entity", "type": "Concept", "description": "Mock entity for demo mode"}]
+                return f'{{"entities": {__import__("json").dumps(demo_entities)}, "relationships": []}}'
             if '"findings"' in prompt or "community report" in p:
                 return '{"title": "Demo Community", "summary": "Mock community summary for demo mode.", "findings": []}'
             if "return only a json list" in p or "sub-questions" in p or "decompose" in p:

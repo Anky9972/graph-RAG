@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
 from typing import List, Dict, Any, Optional
+import re
 
 from ...core.neo4j_store import Neo4jStore
 from ...retrieval.agent import AgentRetrievalSystem
@@ -17,6 +18,8 @@ router = APIRouter()
 from ...core.storage import get_storage
 storage = get_storage()
 
+_TENANT_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,64}$')
+
 @router.post("/api/auth/register", response_model=User, tags=["Authentication"])
 async def register(payload: RegisterRequest, request: Request):
     """Register a new user"""
@@ -26,12 +29,21 @@ async def register(payload: RegisterRequest, request: Request):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
         )
-    
+
     hashed_password = get_password_hash(payload.password)
     # SECURITY: Prevent unauthorized admin registration
     safe_scopes = [s for s in payload.scopes if s != "admin"]
     if not safe_scopes:
         safe_scopes = ["read", "write"]
+
+    # SECURITY: Sanitize tenant_id — only alphanumeric, underscore, hyphen (max 64 chars)
+    raw_tenant_id = payload.tenant_id if hasattr(payload, "tenant_id") and payload.tenant_id else settings.default_tenant_id
+    if not _TENANT_ID_RE.match(raw_tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="tenant_id must contain only letters, digits, underscores, or hyphens (max 64 chars)"
+        )
+    safe_tenant_id = raw_tenant_id
 
     user_data = {
         "username": payload.username,
@@ -40,7 +52,7 @@ async def register(payload: RegisterRequest, request: Request):
         "full_name": payload.full_name,
         "disabled": False,
         "scopes": safe_scopes,
-        "tenant_id": payload.tenant_id if hasattr(payload, "tenant_id") else settings.default_tenant_id
+        "tenant_id": safe_tenant_id
     }
     
     await request.app.state.graph_store.create_user(user_data)

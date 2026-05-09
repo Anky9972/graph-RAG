@@ -37,7 +37,6 @@ from .auth import (
 from ..config import settings
 from ..core.neo4j_store import Neo4jStore
 from ..retrieval.agent import AgentRetrievalSystem
-from ..retrieval.agent import AgentRetrievalSystem
 from ..ingestion.pipeline import IngestionPipeline
 from ..core.storage import get_storage
 from . import admin
@@ -160,3 +159,16 @@ from .routers import graph
 app.include_router(graph.router)
 from .routers import system
 app.include_router(system.router)
+
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Serve React frontend if built (for Hugging Face Spaces / Demo Mode)
+frontend_path = os.path.join(os.path.dirname(__file__), "../../../../frontend-react/dist")
+if os.path.isdir(frontend_path):
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+        
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")

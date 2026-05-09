@@ -91,7 +91,7 @@ async def query(
                 query=request.query,
                 top_k=request.top_k,
                 document_id=request.document_id,
-                use_got=request.use_got or False,
+                mode=request.mode or ("got" if request.use_got else "auto"),
                 tenant_id=getattr(current_user, "tenant_id", None),
             ):
                 steps = chunk.get("reasoning_steps", [])
@@ -144,7 +144,7 @@ async def query(
         query=request.query,
         top_k=request.top_k,
         document_id=request.document_id,
-        use_got=request.use_got or False,
+        mode=request.mode or ("got" if request.use_got else "auto"),
         tenant_id=current_user.tenant_id,
     )
 

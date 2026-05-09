@@ -28,8 +28,7 @@ const InteractionView: React.FC = () => {
   // ── Document / mode state ────────────────────────────────────────────────
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [selectedDocId, setSelectedDocId] = useState('');
-  const [useGot, setUseGot] = useState(false);
-  const [mode, setMode] = useState<'rag' | 'simulation'>('rag');
+  const [mode, setMode] = useState<string>('auto');
   const [agentId, setAgentId] = useState('');
   const [agentNodes, setAgentNodes] = useState<GraphNode[]>([]);
 
@@ -157,8 +156,7 @@ const InteractionView: React.FC = () => {
       const reqBody: any = {
         query: userMessage.content,
         streaming: true,
-        top_k: 5,
-        use_got: useGot
+        mode: mode,
       };
       if (selectedDocId) reqBody.document_id = selectedDocId;
       if (currentConversationId) reqBody.conversation_id = currentConversationId;
@@ -207,6 +205,13 @@ const InteractionView: React.FC = () => {
                   sources: data.sources,
                   confidence: data.confidence,
                   drift_expanded: data.drift_expanded || false,
+                  hallucination_risk: data.hallucination_risk,
+                  confidence_reasoning: data.confidence_reasoning
+                };
+              } else if (data.type === 'confidence_update') {
+                next[last] = {
+                  ...next[last],
+                  confidence: data.confidence,
                   hallucination_risk: data.hallucination_risk,
                   confidence_reasoning: data.confidence_reasoning
                 };
@@ -328,15 +333,7 @@ const InteractionView: React.FC = () => {
             </div>
           </div>
 
-          {/* GoT toggle */}
-          <button
-            className={`iv-got-btn ${useGot ? 'active' : ''}`}
-            onClick={() => setUseGot(g => !g)}
-            title="Graph-of-Thought: runs all retrieval strategies in parallel for higher quality answers"
-          >
-            <Zap size={13} />
-            GoT {useGot ? 'ON' : 'OFF'}
-          </button>
+
         </div>
       </div>
 
@@ -543,9 +540,16 @@ const InteractionView: React.FC = () => {
                   <select
                     className="iv-select iv-select-dark"
                     value={mode}
-                    onChange={e => setMode(e.target.value as 'rag' | 'simulation')}
+                    onChange={e => setMode(e.target.value)}
                   >
-                    <option value="rag">STANDARD (GRAPH LOGIC)</option>
+                    <option value="auto">AUTO (AGENTIC ROUTING)</option>
+                    <option value="hybrid">HYBRID (BM25 + VECTOR)</option>
+                    <option value="hippo">HIPPO-RAG (MULTI-HOP PPR)</option>
+                    <option value="local_graph">LOCAL GRAPH SEARCH</option>
+                    <option value="global_community">GLOBAL COMMUNITY SEARCH</option>
+                    <option value="got">GRAPH-OF-THOUGHT (PARALLEL)</option>
+                    <option value="cypher">CYPHER (GRAPH PATTERN)</option>
+                    <option value="naive">NAIVE (VECTOR ONLY)</option>
                     <option value="simulation">GOD-MODE (PERSONA INTERVIEW)</option>
                   </select>
                   <ChevronDown size={13} className="iv-select-chevron" />

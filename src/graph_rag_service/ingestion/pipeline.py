@@ -158,6 +158,7 @@ class IngestionPipeline:
             d.file_type = $file_type,
             d.size_bytes = $size_bytes,
             d.upload_date = datetime($upload_date),
+            d.tenant_id = $tenant_id,
             d.processed = true
         """
         
@@ -168,7 +169,8 @@ class IngestionPipeline:
                 "filename": document.filename,
                 "file_type": document.file_type,
                 "size_bytes": document.size_bytes,
-                "upload_date": document.upload_date.isoformat()
+                "upload_date": document.upload_date.isoformat(),
+                "tenant_id": document.tenant_id or settings.default_tenant_id
             }
         )
         

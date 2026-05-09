@@ -82,7 +82,9 @@ class HybridSearchTool:
         fused = self._rrf_fuse(
             list_a=vector_results,
             list_b=bm25_results,
-            rrf_k=settings.rrf_k
+            rrf_k=settings.rrf_k,
+            weight_a=settings.hybrid_vector_weight,
+            weight_b=settings.hybrid_bm25_weight
         )
 
         # Build final result list (top k)
@@ -104,24 +106,25 @@ class HybridSearchTool:
         self,
         list_a: List[Dict],
         list_b: List[Dict],
-        rrf_k: int = 60
+        rrf_k: int = 60,
+        weight_a: float = 1.0,
+        weight_b: float = 1.0
     ) -> List[tuple]:
         """
-        Reciprocal Rank Fusion.
+        Weighted Reciprocal Rank Fusion.
         Returns sorted list of (id, score) tuples.
-        Non-parametric — no tuning needed.
         """
         scores: Dict[str, float] = {}
 
         for rank, doc in enumerate(list_a):
             doc_id = doc.get("id", "")
             if doc_id:
-                scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (rrf_k + rank + 1)
+                scores[doc_id] = scores.get(doc_id, 0.0) + weight_a / (rrf_k + rank + 1)
 
         for rank, doc in enumerate(list_b):
             doc_id = doc.get("id", "")
             if doc_id:
-                scores[doc_id] = scores.get(doc_id, 0.0) + 1.0 / (rrf_k + rank + 1)
+                scores[doc_id] = scores.get(doc_id, 0.0) + weight_b / (rrf_k + rank + 1)
 
         return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 

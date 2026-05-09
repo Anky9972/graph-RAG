@@ -74,9 +74,8 @@ class QueryRequest(BaseModel):
     streaming: Optional[bool] = Field(False, description="Enable streaming responses")
     document_id: Optional[str] = Field(None, description="Filter query to a specific document")
     conversation_id: Optional[str] = Field(None, description="Persist memory in a conversation thread")
-    # Gap #6 — GoT mode
-    use_got: Optional[bool] = Field(False, description="Enable Graph-of-Thought parallel exploration")
-    # Gap #5 — Temporal filter
+    mode: Optional[str] = Field("auto", description="Retrieval mode: auto, naive, hybrid, local_graph, global_community, hippo, cypher")
+    use_got: Optional[bool] = Field(False, description="Enable Graph-of-Thought parallel exploration (deprecated: use mode='got')")
     at_time: Optional[datetime] = Field(None, description="Query knowledge graph state at this time")
 
 

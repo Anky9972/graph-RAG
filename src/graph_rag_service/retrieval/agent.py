@@ -28,6 +28,7 @@ from .tools import (
     LLMJudge,
     EntitySummarySearchTool,
 )
+from .hippo_tool import HippoRAGTool
 from ..core.neo4j_store import Neo4jStore
 from ..core.llm_factory import UnifiedLLMProvider
 from ..core.models import QueryResult, OntologySchema, ConfidenceJudgment
@@ -64,6 +65,7 @@ class AgentRetrievalSystem:
         self.filter_tool = MetadataFilterTool(self.store)
         self.community_tool = CommunitySummaryTool(self.store, self.llm)  # Gap #2
         self.entity_summary_tool = EntitySummarySearchTool(self.store, self.llm)  # MiroFish
+        self.hippo_tool = HippoRAGTool(self.store, self.llm)
         self.judge = LLMJudge(self.llm)                                  # Gap #4
 
         # Redis for semantic cache (Gap #8)
@@ -135,6 +137,7 @@ class AgentRetrievalSystem:
         workflow.add_node("metadata_filter", self._metadata_filter)
         workflow.add_node("community_search", self._community_search)   # Gap #2
         workflow.add_node("entity_summary", self._entity_summary_search) # MiroFish
+        workflow.add_node("hippo_search", self._hippo_search)            # HippoRAG
         workflow.add_node("drift_expand", self._drift_expand)            # Gap #3
         workflow.add_node("got_explore", self._got_explore)              # Gap #6
         workflow.add_node("synthesize", self._synthesize_response)
@@ -152,6 +155,7 @@ class AgentRetrievalSystem:
                 "filter": "metadata_filter",
                 "community": "community_search",
                 "entity_summary": "entity_summary",  # MiroFish entity profiles
+                "hippo": "hippo_search",
                 "got": "got_explore",
                 "drift": "drift_expand",
                 "synthesize": "synthesize",
@@ -163,6 +167,7 @@ class AgentRetrievalSystem:
         workflow.add_edge("metadata_filter", "route")
         workflow.add_edge("community_search", "route")
         workflow.add_edge("entity_summary", "route")
+        workflow.add_edge("hippo_search", "route")
         workflow.add_edge("got_explore", "route")
         workflow.add_edge("drift_expand", "route")
         workflow.add_edge("synthesize", END)
@@ -177,7 +182,7 @@ class AgentRetrievalSystem:
         top_k: int = None,
         document_id: Optional[str] = None,
         streaming: bool = False,
-        use_got: bool = False,
+        mode: str = "auto",
         tenant_id: Optional[str] = None,
     ) -> QueryResult:
         start_time = time.time()
@@ -201,7 +206,7 @@ class AgentRetrievalSystem:
                 total_sub_queries=1
             )
 
-        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, use_got=use_got)
+        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, mode=mode)
 
         try:
             result = await asyncio.wait_for(
@@ -259,11 +264,11 @@ class AgentRetrievalSystem:
         query: str,
         top_k: int = None,
         document_id: Optional[str] = None,
-        use_got: bool = False,
+        mode: str = "auto",
         tenant_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream partial states after each graph node for SSE."""
-        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, use_got=use_got)
+        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, mode=mode)
 
         try:
             async for partial_state in self.graph.astream(initial_state):
@@ -279,7 +284,7 @@ class AgentRetrievalSystem:
         self,
         query: str,
         document_id: Optional[str],
-        use_got: bool = False,
+        mode: str = "auto",
         tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         return {
@@ -295,7 +300,7 @@ class AgentRetrievalSystem:
             "tool_results": {},
             "routing_decision": "hybrid",
             "drift_expanded": False,
-            "use_got": use_got,
+            "mode": mode,
         }
 
     # ── Graph nodes ───────────────────────────────────────────────────────────
@@ -341,6 +346,23 @@ Return only a JSON list: ["sub-query 1", "sub-query 2", ...]
 
         current_query = sub_queries[iteration]
 
+        mode = state.get("mode", "auto")
+        if mode != "auto":
+            # Map API/UI modes to internal nodes
+            mapping = {
+                "naive": "vector",
+                "hybrid": "hybrid",
+                "local_graph": "graph",
+                "global_community": "community",
+                "got": "got",
+                "cypher": "cypher",
+                "hippo": "hippo"
+            }
+            decision = mapping.get(mode, "hybrid")
+            state["routing_decision"] = decision
+            state["reasoning_steps"].append(f"Sub-query {iteration+1}: \"{current_query}\" → explicit mode: {mode}")
+            return state
+
         # Gap #2: detect community/thematic queries
         community_keywords = ["overall", "summarize", "themes", "landscape", "across all",
                               "big picture", "main topics", "overview", "what is the"]
@@ -348,14 +370,6 @@ Return only a JSON list: ["sub-query 1", "sub-query 2", ...]
             state["routing_decision"] = "community"
             state["reasoning_steps"].append(
                 f"Sub-query {iteration+1}: \"{current_query}\" → community_summary"
-            )
-            return state
-
-        # Gap #6: GoT for complex multi-hop queries
-        if state.get("use_got"):
-            state["routing_decision"] = "got"
-            state["reasoning_steps"].append(
-                f"Sub-query {iteration+1}: \"{current_query}\" → graph_of_thought"
             )
             return state
 
@@ -520,6 +534,19 @@ If no filters are extractable, return {{}}
         state["reasoning_steps"].append(
             f"Entity summary search: {len(results)} entity profiles retrieved"
         )
+        return state
+
+    async def _hippo_search(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """HippoRAG Personalized PageRank search"""
+        iteration = state["iteration"]
+        query = state["decomposed_queries"][iteration]
+        tenant_id = state.get("tenant_id")
+
+        results = await self.hippo_tool.run(query, k=settings.default_top_k, tenant_id=tenant_id)
+
+        state["contexts"].extend(results)
+        state["iteration"] += 1
+        state["reasoning_steps"].append(f"HippoRAG PPR search: {len(results)} results")
         return state
 
     async def _drift_expand(self, state: Dict[str, Any]) -> Dict[str, Any]:

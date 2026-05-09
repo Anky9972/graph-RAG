@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { DriftReport, DocumentInfo } from '../types/api';
+import type { DriftReport, DocumentInfo } from '../types/api';
 import { Database, GitMerge, Settings, Sparkles, Save, Info, Zap, AlertTriangle, Check, X, FileText } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
@@ -533,7 +533,7 @@ const Ontology: React.FC = () => {
             {driftReports.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
                 <div className="control-label" style={{ marginBottom: '0.25rem' }}>PENDING DRIFT REPORTS</div>
-                {driftReports.slice(0, 3).map(r => (
+                {driftReports.slice(0, 3).map((r: any) => (
                   <div key={r.id} style={{ border: '1px solid #e5e5e5', padding: '0.6rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {r.summary || r.id}

@@ -96,17 +96,18 @@ export interface EvalResultData {
 }
 
 export interface Message {
-  id: string;
+  id?: string;
   role: string;
   content: string;
   reasoning?: string[];
   sources?: Array<Record<string, any>>;
-  confidence?: number;
+  confidence?: number | null;
   hallucination_risk?: string;
   confidence_reasoning?: string;
-  created_at: string;
+  created_at?: string;
   eval_result?: EvalResultData;
   evaluating?: boolean;
+  drift_expanded?: boolean;
 }
 
 export interface Conversation {

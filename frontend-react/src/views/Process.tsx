@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { DocumentInfo } from '../types/api';
+import type { DocumentInfo } from '../types/api';
 import { Upload, FilePlus, Activity, Trash2, Eye, Globe, X, FileText, Link, Hash, BookOpen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

@@ -15,7 +15,7 @@ const Spinner = () => (
 
 // ─── Tab Components ──────────────────────────────────────────────────────────
 
-const OverviewTab = ({ stats, health, onRefresh }: { stats: Partial<import('../types/api').SystemStatsResponse & {graph: any, total_nodes: number, total_relationships: number, documents: any, total_documents: number, costs: any}>; health: import('../types/api').SystemHealthResponse | any; onRefresh: () => void }) => (
+const OverviewTab = ({ stats, health, onRefresh }: { stats: Partial<import('../types/api').SystemStatsResponse & {graph: any, total_nodes: number, total_relationships: number, documents: any, total_documents: number, costs: any, system?: any}>; health: import('../types/api').SystemHealthResponse | any; onRefresh: () => void }) => (
   <div>
     {/* KPI Grid */}
     <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4 mb-8">

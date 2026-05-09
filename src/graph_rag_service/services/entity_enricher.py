@@ -1,12 +1,12 @@
-import logging
-logger = logging.getLogger(__name__)
 """
 EntityEnricher: Entity Profile Summaries
 Traverses each entity's graph neighborhood and generates an LLM-synthesized
 summary stored as `e.summary` on the Neo4j node.
 """
-
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
+
 
 import asyncio
 from datetime import datetime

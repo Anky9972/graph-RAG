@@ -1,5 +1,3 @@
-import logging
-logger = logging.getLogger(__name__)
 """
 ReportAgent — Full ReACT Analytical Agent
 Replaces the 72-line stub with a complete ReACT (Reasoning + Acting) loop
@@ -10,8 +8,10 @@ Architecture:
 - PanoramaSearchTool: Entity-type sweep for macro-level statistics
 - QuickSearchTool:    Fast single-entity lookup with direct relationships
 """
-
 from __future__ import annotations
+import logging
+logger = logging.getLogger(__name__)
+
 
 import asyncio
 import json

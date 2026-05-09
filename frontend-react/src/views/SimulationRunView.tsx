@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { GraphNode, GraphEdge, DocumentInfo } from '../types/api';
+import type { GraphNode, GraphEdge, DocumentInfo } from '../types/api';
 import GraphCanvas, { DEFAULT_OPTIONS } from '../components/GraphCanvas';
 import type { GraphOptions, GraphCanvasHandle } from '../components/GraphCanvas';
 import {

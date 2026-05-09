@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Message, Conversation, DocumentInfo, GraphNode } from '../types/api';
+import type { Message, Conversation, DocumentInfo, GraphNode } from '../types/api';
 import {
   MessageSquare, Send, Bot, User as UserIcon, Zap,
   Menu, Info, X, ChevronDown, FileText, Plus
@@ -118,8 +118,8 @@ const InteractionView: React.FC = () => {
     e.preventDefault();
     if (!query.trim() || loading) return;
 
-    const userMessage = { role: 'user', content: query };
-    const assistantPlaceholder = {
+    const userMessage: Message = { role: 'user', content: query };
+    const assistantPlaceholder: Message = {
       role: 'assistant', content: '', sources: [], reasoning: [],
       confidence: null, drift_expanded: false
     };
@@ -441,7 +441,7 @@ const InteractionView: React.FC = () => {
                     </div>
 
                     {/* reasoning steps */}
-                    {msg.role === 'assistant' && msg.reasoning?.length > 0 && (
+                    {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
                       <div className="iv-reasoning">
                         {msg.reasoning.map((step: string, si: number) => (
                           <div key={si} className="iv-reasoning-step">
@@ -464,7 +464,7 @@ const InteractionView: React.FC = () => {
                     </div>
 
                     {/* sources */}
-                    {msg.sources?.length > 0 && (
+                    {msg.sources && msg.sources.length > 0 && (
                       <div className="iv-sources">
                         <div className="iv-sources-top">
                           <div className="iv-sources-label">

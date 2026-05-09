@@ -213,8 +213,11 @@ Only return the JSON object, no additional text.
         
         embed_provider = settings.embedding_provider
         if self.provider_name == "mock" or embed_provider == "mock":
-            # Return a generic 768-dim mock vector
-            return [0.01] * 768
+            import hashlib
+            import random
+            seed = int(hashlib.md5(text.encode()).hexdigest()[:8], 16)
+            rng = random.Random(seed)
+            return [rng.uniform(-0.1, 0.1) for _ in range(768)]
             
         if embed_provider == "gemini":
             embedder = GeminiEmbedding(
@@ -260,7 +263,14 @@ Only return the JSON object, no additional text.
         
         embed_provider = settings.embedding_provider
         if self.provider_name == "mock" or embed_provider == "mock":
-            return [[0.01] * 768 for _ in texts]
+            import hashlib
+            import random
+            result = []
+            for t in texts:
+                seed = int(hashlib.md5(t.encode()).hexdigest()[:8], 16)
+                rng = random.Random(seed)
+                result.append([rng.uniform(-0.1, 0.1) for _ in range(768)])
+            return result
             
         if embed_provider == "gemini":
             embedder = GeminiEmbedding(

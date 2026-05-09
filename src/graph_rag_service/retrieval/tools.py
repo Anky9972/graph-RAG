@@ -217,7 +217,7 @@ class CommunitySummaryTool:
         CALL db.index.vector.queryNodes('community_embeddings', $search_k, $query_embedding)
         YIELD node, score
         {tenant_filter}
-        RETURN node.id as community_id, node.title as title, node.summary as summary, node.findings as findings, score
+        RETURN node.id as community_id, node.title as title, node.summary as summary, node.report_json as report_json, node.evidence_chunk_ids as evidence_chunk_ids, score
         LIMIT $k
         """
 
@@ -229,8 +229,18 @@ class CommunitySummaryTool:
             rows = await self.store.execute_query(cypher, params)
             results = []
             for row in rows:
-                findings_text = "; ".join(row.get("findings", [])) if row.get("findings") else ""
-                text = f"Title: {row.get('title', '')}\nSummary: {row.get('summary', '')}\nFindings: {findings_text}"
+                import json
+                try:
+                    report_data = json.loads(row.get("report_json") or "{}")
+                    findings_list = report_data.get("findings", [])
+                    findings_text = "; ".join(f.get("text", "") if isinstance(f, dict) else str(f) for f in findings_list)
+                except Exception:
+                    findings_text = ""
+                
+                evidence = row.get("evidence_chunk_ids", [])
+                evidence_text = f"\nEvidence Chunks: {', '.join(evidence)}" if evidence else ""
+                
+                text = f"Title: {row.get('title', '')}\nSummary: {row.get('summary', '')}\nFindings: {findings_text}{evidence_text}"
                 results.append({
                     "id": f"community_{row.get('community_id')}",
                     "text": text,
@@ -436,9 +446,13 @@ class CypherGenerationTool:
         if not cypher:
             return []
 
+        if tenant_id and tenant_id not in cypher:
+            logger.warning("Cypher query rejected: Generated query did not include the required tenant_id filter.")
+            return []
+
         if not self._validate_cypher(cypher):
             cypher = await self._correct_cypher(cypher, query)
-            if not self._validate_cypher(cypher):
+            if not self._validate_cypher(cypher) or (tenant_id and tenant_id not in cypher):
                 return []
 
         try:

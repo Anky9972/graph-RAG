@@ -277,3 +277,41 @@ async def update_graph_from_text(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+
+@router.delete("/api/graph/purge-tenant", tags=["Graph"])
+async def purge_tenant_data(
+    request: Request,
+    payload: dict,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete ALL graph data (nodes + relationships) belonging to a given tenant.
+    ADMIN-ONLY. Used by benchmark cleanup and test teardown.
+    """
+    if "admin" not in current_user.scopes:
+        raise HTTPException(status_code=403, detail="Admin scope required for purge-tenant.")
+
+    target_tenant_id = payload.get("tenant_id")
+    if not target_tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id is required.")
+
+    # Hard-delete all nodes scoped to this tenant
+    query = """
+    CALL apoc.periodic.iterate(
+      'MATCH (n {tenant_id: $tid}) RETURN n',
+      'DETACH DELETE n',
+      {batchSize: 500, params: {tid: $tid}}
+    )
+    YIELD batches, total
+    RETURN batches, total
+    """
+    try:
+        result = await request.app.state.graph_store.execute_query(query, {"tid": target_tenant_id})
+        deleted = result[0].get("total", 0) if result else 0
+    except Exception:
+        # Fall back to simple DETACH DELETE if APOC not available
+        fallback = "MATCH (n {tenant_id: $tid}) DETACH DELETE n"
+        await request.app.state.graph_store.execute_query(fallback, {"tid": target_tenant_id})
+        deleted = -1  # Unknown
+
+    return {"status": "purged", "tenant_id": target_tenant_id, "nodes_deleted": deleted}

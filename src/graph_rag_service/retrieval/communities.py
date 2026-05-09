@@ -8,12 +8,17 @@ from ..core.llm_factory import UnifiedLLMProvider
 
 logger = logging.getLogger(__name__)
 
+class CommunityFinding(BaseModel):
+    text: str
+    supporting_chunk_ids: List[str] = []
+    confidence: float = 0.0
+
 class CommunityReport(BaseModel):
     community_id: str
     level: int
     title: str
     summary: str
-    findings: List[str]
+    findings: List[CommunityFinding]
     entities: List[str]
     tenant_id: Optional[str] = None
 
@@ -114,31 +119,46 @@ class CommunityBuilder:
         """
         tenant_filter = "n.tenant_id = $tenant_id AND" if tenant_id else ""
         
-        query = f"""
+        # 1. Fetch communities and normalize to lists
+        fetch_query = f"""
         MATCH (n:Entity)
         WHERE {tenant_filter} n.leiden_community IS NOT NULL
-        // Normalize comms to always be a list. If it's a scalar, make it a single-element list.
-        WITH n, 
-             CASE 
-               WHEN type(n.leiden_community) CONTAINS "LIST" THEN n.leiden_community 
-               ELSE [n.leiden_community] 
-             END AS comms
+        RETURN id(n) AS node_id, n.leiden_community AS comm
+        """
+        rows = await self.store.execute_query(fetch_query, {"tenant_id": tenant_id})
         
-        MERGE (c0:Community {{id: "0:" + toString(comms[0])}})
-        SET c0.level = 0, c0.tenant_id = $tenant_id
+        batch_data = []
+        for row in rows:
+            comm = row["comm"]
+            comms = comm if isinstance(comm, list) else [comm]
+            batch_data.append({"node_id": row["node_id"], "comms": comms})
+            
+        if not batch_data:
+            return
+
+        # 2. Write communities with parameterized UNWIND
+        write_query = f"""
+        UNWIND $batch AS item
+        MATCH (n:Entity) WHERE id(n) = item.node_id
+        
+        MERGE (c0:Community {{id: "0:" + toString(item.comms[0])}})
+        SET c0.level = 0
+        {f", c0.tenant_id = '{tenant_id}'" if tenant_id else ""}
         MERGE (n)-[:IN_COMMUNITY]->(c0)
         
-        WITH DISTINCT comms
+        WITH item.comms AS comms
         WHERE size(comms) > 1
         UNWIND range(0, size(comms)-2) AS level
         MERGE (c1:Community {{id: toString(level) + ":" + toString(comms[level])}})
-        SET c1.level = level, c1.tenant_id = $tenant_id
+        SET c1.level = level
+        {f", c1.tenant_id = '{tenant_id}'" if tenant_id else ""}
         MERGE (c2:Community {{id: toString(level+1) + ":" + toString(comms[level+1])}})
-        SET c2.level = level+1, c2.tenant_id = $tenant_id
+        SET c2.level = level+1
+        {f", c2.tenant_id = '{tenant_id}'" if tenant_id else ""}
         MERGE (c1)-[:PARENT]->(c2)
         """
         
-        await self.store.execute_query(query, {"tenant_id": tenant_id})
+        await self.store.execute_query(write_query, {"batch": batch_data})
         logger.info(f"Community nodes and IN_COMMUNITY relationships created for tenant {tenant_id}")
 
     async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -271,7 +291,8 @@ class CommunityBuilder:
         """
         Embeds the community report summary to allow semantic search over communities.
         """
-        text_to_embed = f"Title: {report.title}\nSummary: {report.summary}\nFindings: {'; '.join(report.findings)}"
+        findings_text = "; ".join(f.text if isinstance(f, CommunityFinding) else str(f) for f in report.findings)
+        text_to_embed = f"Title: {report.title}\nSummary: {report.summary}\nFindings: {findings_text}"
         embedding = await self.llm.embed(text_to_embed)
         
         if embedding:

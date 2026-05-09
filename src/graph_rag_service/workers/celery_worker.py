@@ -77,14 +77,15 @@ def run_async(coro):
 
 
 @celery_app.task(name='ingest_document', bind=True)
-def ingest_document_task(self, file_path: str, ontology_dict: dict = None):
+def ingest_document_task(self, file_path: str, ontology_dict: dict = None, tenant_id: str = None):
     """
     Celery task for document ingestion
-    
+
     Args:
         file_path: Path to document file
         ontology_dict: Optional ontology as dictionary
-        
+        tenant_id: Tenant to scope ingestion to
+
     Returns:
         Extraction result as dictionary
     """
@@ -120,7 +121,8 @@ def ingest_document_task(self, file_path: str, ontology_dict: dict = None):
                 result = await pipeline.ingest_document(
                     temp_path,
                     ontology=ontology,
-                    progress_callback=progress_cb
+                    progress_callback=progress_cb,
+                    tenant_id=tenant_id
                 )
             
             # Convert result to dict
@@ -149,7 +151,7 @@ def ingest_document_task(self, file_path: str, ontology_dict: dict = None):
 
 
 @celery_app.task(name='ingest_documents_batch', bind=True)
-def ingest_documents_batch_task(self, file_paths: list, ontology_dict: dict = None):
+def ingest_documents_batch_task(self, file_paths: list, ontology_dict: dict = None, tenant_id: str = None):
     """
     Celery task for batch document ingestion
     

@@ -89,3 +89,11 @@ neo4j_data/
 
 # ── Windows shortcuts / artifacts ────────────────────────────────────────────
 *.lnk
+
+# ── Generated graphify analysis artifacts (large, auto-generated) ─────────────
+artifacts/graphify-out/
+src/graphify-out/
+
+# ── Benchmark result outputs ──────────────────────────────────────────────────
+benchmarks/results/
+benchmarks/*.json

@@ -381,12 +381,11 @@ class Neo4jStore(GraphStore, VectorStore):
         self,
         entity_names: List[str],
         tenant_id: Optional[str] = None
-    ) -> Dict[int, List[Dict[str, Any]]]:
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get community groupings for a list of entities.
-        Uses community_id property stored on entities (assigned during ingestion
-        or via background Louvain task).
-        Returns {community_id: [entity_dict, ...]}
+        Uses IN_COMMUNITY relationships to find the communities.
+        Returns {community_id_string: [entity_dict, ...]}
         """
         tenant_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
         query = f"""
@@ -394,7 +393,7 @@ class Neo4jStore(GraphStore, VectorStore):
         WHERE e.name IN $names {tenant_filter}
         RETURN c.id as community_id,
                collect({{name: e.name, type: e.type, properties: e.properties}}) as entities
-        ORDER BY size(collect(e)) DESC
+        ORDER BY size(entities) DESC
         LIMIT 10
         """
         params: Dict[str, Any] = {"names": entity_names}
@@ -403,7 +402,7 @@ class Neo4jStore(GraphStore, VectorStore):
 
         try:
             rows = await self.execute_query(query, params)
-            result: Dict[int, List[Dict]] = {}
+            result: Dict[str, List[Dict]] = {}
             for row in rows:
                 result[row["community_id"]] = row["entities"]
             return result

@@ -199,6 +199,28 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
             "error": str(e)
         }
 
+async def build_communities(client: httpx.AsyncClient, config: BenchmarkConfig, token: str):
+    """Build community index once before evaluating global_community mode."""
+    communities_url = f"{config.base_url}/api/graph/communities/assign"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        res = await client.post(communities_url, headers=headers, timeout=120.0)
+        res.raise_for_status()
+        print(f"  Community index built: {res.json()}")
+    except Exception as e:
+        print(f"  [Warning] Community indexing failed: {e}")
+
+async def cleanup_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, tenant_id: str):
+    """Delete all graph data for the benchmark tenant."""
+    cleanup_url = f"{config.base_url}/api/graph/purge-tenant"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        res = await client.delete(cleanup_url, headers=headers, json={"tenant_id": tenant_id}, timeout=30.0)
+        res.raise_for_status()
+        print(f"  Benchmark tenant {tenant_id} cleaned up.")
+    except Exception as e:
+        print(f"  [Warning] Cleanup failed for tenant {tenant_id}: {e}")
+
 async def run_benchmark():
     config = BenchmarkConfig()
     dataset = load_hf_dataset(config)
@@ -213,23 +235,34 @@ async def run_benchmark():
         # Create isolated tenant for benchmark
         print("\nCreating isolated benchmark tenant...")
         token = await create_benchmark_tenant(client, config)
+        benchmark_tenant_id = f"benchmark_run_{int(time.time())}"
+        # If tenant creation succeeded, the tenant ID is encoded in the JWT.
+        # We track it separately for cleanup.
+
+        has_community_mode = any(m in config.modes for m in ["global_community", "hippo"])
+        
+        # Ingest all contexts first before building communities or evaluating
+        print("\nIngesting all context documents...")
+        for i, q in enumerate(dataset):
+            print(f"  Ingesting context {i+1}/{len(dataset)}...")
+            await ingest_context(client, config, token, q)
+        
+        # Build community index once if needed
+        if has_community_mode:
+            print("\nBuilding community index (required for global_community mode)...")
+            await asyncio.sleep(2)  # Allow Neo4j to settle
+            await build_communities(client, config, token)
         
         for i, q in enumerate(dataset):
             print(f"\nEvaluating Question {i+1}/{len(dataset)}: {q['question']}")
-            
-            # Ingest context into knowledge graph
-            print(f"  Ingesting context into knowledge graph...")
-            await ingest_context(client, config, token, q)
-            
-            # Allow Neo4j indexing to catch up
-            await asyncio.sleep(1)
-            
+            # Context already ingested above
             for mode in config.modes:
                 print(f"  Running mode: {mode}...")
                 res = await evaluate_question(client, config, token, mode, q)
                 results.append(res)
                 status = "PASS" if res.get("is_correct") else "FAIL"
-                print(f"    [{status}] Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
+                f1 = res.get("f1_score", 0.0)
+                print(f"    [{status}] F1: {f1:.2f} | Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
                 
     summary = {}
     for r in results:
@@ -241,12 +274,19 @@ async def run_benchmark():
         if r.get("is_correct"):
             summary[m]["correct"] += 1
         summary[m]["time"] += r["duration"]
+        summary[m]["f1"] = summary[m].get("f1", 0.0) + r.get("f1_score", 0.0)
         
     print("\n=== BENCHMARK RESULTS ===")
     for m, stats in summary.items():
         accuracy = (stats["correct"] / stats["total"]) * 100 if stats["total"] > 0 else 0
         avg_time = stats["time"] / stats["total"] if stats["total"] > 0 else 0
-        print(f"Mode: {m:<15} | Accuracy: {accuracy:>5.1f}% | Avg Time: {avg_time:>5.2f}s")
+        avg_f1 = stats["f1"] / stats["total"] if stats["total"] > 0 else 0
+        print(f"Mode: {m:<15} | Accuracy: {accuracy:>5.1f}% | Avg F1: {avg_f1:.3f} | Avg Time: {avg_time:>5.2f}s")
+
+    # Cleanup: remove all benchmark tenant data
+    async with httpx.AsyncClient() as cleanup_client:
+        token_cleanup = await authenticate(cleanup_client, BenchmarkConfig())
+        await cleanup_benchmark_tenant(cleanup_client, config, token_cleanup, benchmark_tenant_id)
 
 if __name__ == "__main__":
     asyncio.run(run_benchmark())

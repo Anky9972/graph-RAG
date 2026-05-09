@@ -92,7 +92,8 @@ async def upload_document(request: Request,
     # Queue ingestion task
     task = ingest_document_task.delay(
         str(file_path),
-        ontology_dict=None
+        ontology_dict=None,
+        tenant_id=current_user.tenant_id
     )
     
     return DocumentUploadResponse(
@@ -157,7 +158,8 @@ async def scrape_url(
         # Queue ingestion
         task = ingest_document_task.delay(
             str(file_path),
-            ontology_dict=None
+            ontology_dict=None,
+            tenant_id=current_user.tenant_id
         )
         
         return DocumentUploadResponse(
@@ -227,14 +229,24 @@ async def crawl_urls(
 
 @router.get("/api/documents", response_model=DocumentListResponse, tags=["Documents"])
 async def list_documents(request: Request, current_user: User = Depends(get_current_user)):
-    """List all ingested documents"""
-    query = """
-    MATCH (d:Document)
-    RETURN d.id as id, d.filename as filename, d.file_type as file_type,
-           d.size_bytes as size_bytes, toString(d.upload_date) as upload_date
-    ORDER BY d.upload_date DESC
-    """
-    results = await request.app.state.graph_store.execute_query(query)
+    """List all ingested documents for the current tenant"""
+    tenant_id = current_user.tenant_id
+    if tenant_id:
+        query = """
+        MATCH (d:Document {tenant_id: $tenant_id})
+        RETURN d.id as id, d.filename as filename, d.file_type as file_type,
+               d.size_bytes as size_bytes, toString(d.upload_date) as upload_date
+        ORDER BY d.upload_date DESC
+        """
+        results = await request.app.state.graph_store.execute_query(query, {"tenant_id": tenant_id})
+    else:
+        query = """
+        MATCH (d:Document)
+        RETURN d.id as id, d.filename as filename, d.file_type as file_type,
+               d.size_bytes as size_bytes, toString(d.upload_date) as upload_date
+        ORDER BY d.upload_date DESC
+        """
+        results = await request.app.state.graph_store.execute_query(query)
     docs = [
         DocumentInfo(
             id=r["id"] or "",

@@ -53,7 +53,8 @@ class IngestionPipeline:
         file_path: Path,
         ontology: Optional[OntologySchema] = None,
         store_results: bool = True,
-        progress_callback=None
+        progress_callback=None,
+        tenant_id: Optional[str] = None
     ) -> ExtractionResult:
         """
         Ingest a single document through the full pipeline
@@ -111,6 +112,14 @@ class IngestionPipeline:
         
         # Step 5: Store in graph database
         if store_results and self.graph_store:
+            # Stamp tenant_id on document, entities, relationships, chunks
+            document.tenant_id = tenant_id or settings.default_tenant_id
+            for entity in extraction_result.entities:
+                entity.tenant_id = tenant_id or settings.default_tenant_id
+            for rel in extraction_result.relationships:
+                rel.tenant_id = tenant_id or settings.default_tenant_id
+            for chunk in extraction_result.chunks:
+                chunk.tenant_id = tenant_id or settings.default_tenant_id
             logger.info("Storing in graph database...")
             await self._store_extraction(document, extraction_result)
             logger.info("Storage complete")

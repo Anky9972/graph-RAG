@@ -29,23 +29,27 @@ async def get_graph_visualization(request: Request,
         # We cannot use `d` in a WHERE clause after WITH drops it (Neo4j 5 syntax rule).
         query = """
         MATCH (:Document {id: $document_id})-[:CONTAINS]->(:Chunk)-[:MENTIONS]->(n:Entity)
+        WHERE n.tenant_id = $tenant_id
         WITH DISTINCT n LIMIT $limit
         OPTIONAL MATCH (n)-[r]->(m:Entity)<-[:MENTIONS]-(:Chunk)<-[:CONTAINS]-(:Document {id: $document_id})
+        WHERE m.tenant_id = $tenant_id
         RETURN 
             collect(DISTINCT {id: coalesce(n.id, toString(id(n))), label: n.name, type: n.type, description: n.description, properties: properties(n)}) as nodes,
             collect(DISTINCT {source: coalesce(n.id, toString(id(n))), target: coalesce(m.id, toString(id(m))), type: type(r)}) as edges
         """
-        result = await request.app.state.graph_store.execute_query(query, {"limit": limit, "document_id": document_id})
+        result = await request.app.state.graph_store.execute_query(query, {"limit": limit, "document_id": document_id, "tenant_id": current_user.tenant_id})
     else:
         query = """
         MATCH (n:Entity)
+        WHERE n.tenant_id = $tenant_id
         WITH n LIMIT $limit
         OPTIONAL MATCH (n)-[r]->(m:Entity)
+        WHERE m.tenant_id = $tenant_id
         RETURN 
             collect(DISTINCT {id: coalesce(n.id, toString(id(n))), label: n.name, type: n.type, description: n.description, properties: properties(n)}) as nodes,
             collect(DISTINCT {source: coalesce(n.id, toString(id(n))), target: coalesce(m.id, toString(id(m))), type: type(r)}) as edges
         """
-        result = await request.app.state.graph_store.execute_query(query, {"limit": limit})
+        result = await request.app.state.graph_store.execute_query(query, {"limit": limit, "tenant_id": current_user.tenant_id})
 
     
     if not result:
@@ -111,13 +115,19 @@ async def assign_communities(request: Request,
     current_user: User = Depends(get_current_user)
 ):
     """
-    Detect and assign community IDs to all entities using connected-components (WCC).
+    Detect and assign community IDs using Hierarchical Leiden clustering.
     Run this after ingesting new documents to update community clustering.
     """
-    count = await request.app.state.graph_store.assign_community_ids()
+    from ...retrieval.communities import CommunityBuilder
+    builder = CommunityBuilder(request.app.state.graph_store, request.app.state.retrieval_agent.llm)
+    stats = await builder.run_leiden(current_user.tenant_id)
+    await builder.create_community_nodes(current_user.tenant_id)
+    reports = await builder.generate_all_reports(current_user.tenant_id)
+    
+    count = len(reports)
     return CommunityAssignResponse(
         communities_found=count,
-        message=f"Assigned {count} community IDs to entities. Community search is now active."
+        message=f"Generated {count} community reports. Community search is now active."
     )
 
 
@@ -130,15 +140,16 @@ async def list_communities(request: Request,
     """List top communities with entity counts"""
     from fastapi.responses import JSONResponse
     query = """
-    MATCH (e:Entity)
-    WHERE e.community_id IS NOT NULL
-    RETURN e.community_id as community_id,
+    MATCH (c:Community)
+    WHERE c.tenant_id = $tenant_id
+    OPTIONAL MATCH (e:Entity)-[:IN_COMMUNITY]->(c)
+    RETURN c.id as community_id,
            count(e) as entity_count,
-           collect(e.name)[0..5] as sample_entities
+           collect(c.title)[0..1] as sample_entities
     ORDER BY entity_count DESC
     LIMIT $limit
     """
-    rows = await request.app.state.graph_store.execute_query(query, {"limit": limit})
+    rows = await request.app.state.graph_store.execute_query(query, {"limit": limit, "tenant_id": current_user.tenant_id})
     return JSONResponse({"communities": rows, "total": len(rows)})
 
 
@@ -157,8 +168,8 @@ async def export_graph(request: Request,
     """
     from fastapi.responses import JSONResponse, PlainTextResponse
 
-    doc_filter = "MATCH (:Document {id: $doc_id})-[:CONTAINS]->(:Chunk)-[:MENTIONS]->(e:Entity)" if document_id else "MATCH (e:Entity)"
-    params = {"doc_id": document_id} if document_id else {}
+    doc_filter = "MATCH (:Document {id: $doc_id})-[:CONTAINS]->(:Chunk)-[:MENTIONS]->(e:Entity) WHERE e.tenant_id = $tenant_id" if document_id else "MATCH (e:Entity) WHERE e.tenant_id = $tenant_id"
+    params = {"doc_id": document_id, "tenant_id": current_user.tenant_id} if document_id else {"tenant_id": current_user.tenant_id}
 
     node_query = f"""
     {doc_filter}
@@ -169,13 +180,14 @@ async def export_graph(request: Request,
     rel_query = """
     MATCH (a:Entity)-[r]->(b:Entity)
     WHERE type(r) NOT IN ['HAS_CONVERSATION', 'HAS_MESSAGE', 'CONTAINS', 'MENTIONS']
+      AND a.tenant_id = $tenant_id AND b.tenant_id = $tenant_id
     RETURN a.name as source, b.name as target, type(r) as relationship,
            r.valid_from as valid_from, r.confidence as confidence
     LIMIT 5000
     """
 
     nodes = await request.app.state.graph_store.execute_query(node_query, params)
-    rels = await request.app.state.graph_store.execute_query(rel_query)
+    rels = await request.app.state.graph_store.execute_query(rel_query, {"tenant_id": current_user.tenant_id})
 
     if format == "cypher":
         lines = ["// Graph export — Cypher format"]
@@ -226,7 +238,8 @@ async def export_graph(request: Request,
 
 @router.post("/api/graph/update", response_model=GraphUpdateResponse, tags=["Graph"])
 async def update_graph_from_text(
-    request: GraphUpdateRequest,
+    payload: GraphUpdateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -238,14 +251,15 @@ async def update_graph_from_text(
 
     Inspired by MiroFish's zep_graph_memory_updater.py.
     """
+    from ...services.graph_memory_updater import GraphMemoryUpdater
     updater = GraphMemoryUpdater(
         graph_store=request.app.state.graph_store,
         llm_provider=settings.default_llm_provider,
     )
     result = await updater.update_from_text(
-        text=request.text,
-        source_label=request.source_label or "api_push",
-        valid_from=request.valid_from,
+        text=payload.text,
+        source_label=payload.source_label or "api_push",
+        valid_from=payload.valid_from,
     )
     return GraphUpdateResponse(
         entities_added=result.entities_added,

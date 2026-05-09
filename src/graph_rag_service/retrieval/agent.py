@@ -126,12 +126,15 @@ class AgentRetrievalSystem:
             routing_decision: str
             drift_expanded: bool    # Gap #3
             use_got: bool           # Gap #6
+            top_k: int
+            mode: str
 
         workflow = StateGraph(State)
 
         workflow.add_node("decompose", self._decompose_query)
         workflow.add_node("route", self._route_query)
         workflow.add_node("hybrid_search", self._hybrid_search)          # Gap #1
+        workflow.add_node("vector_search", self._vector_search)
         workflow.add_node("graph_traversal", self._graph_traversal)
         workflow.add_node("cypher_query", self._cypher_query)
         workflow.add_node("metadata_filter", self._metadata_filter)
@@ -149,7 +152,7 @@ class AgentRetrievalSystem:
             self._should_continue,
             {
                 "hybrid": "hybrid_search",
-                "vector": "hybrid_search",     # vector routes to hybrid for quality
+                "vector": "vector_search",     # vector routes to vector
                 "graph": "graph_traversal",
                 "cypher": "cypher_query",
                 "filter": "metadata_filter",
@@ -162,6 +165,7 @@ class AgentRetrievalSystem:
             }
         )
         workflow.add_edge("hybrid_search", "route")
+        workflow.add_edge("vector_search", "route")
         workflow.add_edge("graph_traversal", "route")
         workflow.add_edge("cypher_query", "route")
         workflow.add_edge("metadata_filter", "route")
@@ -206,7 +210,7 @@ class AgentRetrievalSystem:
                 total_sub_queries=1
             )
 
-        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, mode=mode)
+        initial_state = self._make_initial_state(query, document_id, top_k=top_k, tenant_id=tenant_id, mode=mode)
 
         try:
             result = await asyncio.wait_for(
@@ -268,7 +272,7 @@ class AgentRetrievalSystem:
         tenant_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream partial states after each graph node for SSE."""
-        initial_state = self._make_initial_state(query, document_id, tenant_id=tenant_id, mode=mode)
+        initial_state = self._make_initial_state(query, document_id, top_k=top_k or settings.default_top_k, tenant_id=tenant_id, mode=mode)
 
         try:
             async for partial_state in self.graph.astream(initial_state):
@@ -284,6 +288,7 @@ class AgentRetrievalSystem:
         self,
         query: str,
         document_id: Optional[str],
+        top_k: int,
         mode: str = "auto",
         tenant_id: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -301,6 +306,7 @@ class AgentRetrievalSystem:
             "routing_decision": "hybrid",
             "drift_expanded": False,
             "mode": mode,
+            "top_k": top_k,
         }
 
     # ── Graph nodes ───────────────────────────────────────────────────────────
@@ -434,10 +440,11 @@ Return ONLY one word: hybrid | graph | cypher | filter | community | entity_summ
         query = state["decomposed_queries"][iteration]
         document_id = state.get("document_id")
         tenant_id = state.get("tenant_id")
+        k = state.get("top_k", settings.default_top_k)
 
         results = await self.hybrid_tool.run(
             query=query,
-            k=settings.default_top_k,
+            k=k,
             document_id=document_id,
             tenant_id=tenant_id
         )
@@ -445,6 +452,26 @@ Return ONLY one word: hybrid | graph | cypher | filter | community | entity_summ
         state["contexts"].extend(results)
         state["iteration"] += 1
         state["reasoning_steps"].append(f"Hybrid search: {len(results)} results")
+        return state
+
+    async def _vector_search(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Naive Vector Search"""
+        iteration = state["iteration"]
+        query = state["decomposed_queries"][iteration]
+        document_id = state.get("document_id")
+        tenant_id = state.get("tenant_id")
+        k = state.get("top_k", settings.default_top_k)
+
+        results = await self.vector_tool.run(
+            query=query,
+            k=k,
+            document_id=document_id,
+            tenant_id=tenant_id
+        )
+
+        state["contexts"].extend(results)
+        state["iteration"] += 1
+        state["reasoning_steps"].append(f"Vector search: {len(results)} results")
         return state
 
     async def _graph_traversal(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -526,8 +553,9 @@ If no filters are extractable, return {{}}
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
         tenant_id = state.get("tenant_id")
+        k = state.get("top_k", settings.default_top_k)
 
-        results = await self.entity_summary_tool.run(query, k=settings.default_top_k, tenant_id=tenant_id)
+        results = await self.entity_summary_tool.run(query, k=k, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -541,8 +569,9 @@ If no filters are extractable, return {{}}
         iteration = state["iteration"]
         query = state["decomposed_queries"][iteration]
         tenant_id = state.get("tenant_id")
+        k = state.get("top_k", settings.default_top_k)
 
-        results = await self.hippo_tool.run(query, k=settings.default_top_k, tenant_id=tenant_id)
+        results = await self.hippo_tool.run(query, k=k, tenant_id=tenant_id)
 
         state["contexts"].extend(results)
         state["iteration"] += 1
@@ -602,9 +631,10 @@ Return JSON list: ["follow-up 1", "follow-up 2"]
         query = state["decomposed_queries"][iteration]
         document_id = state.get("document_id")
         tenant_id = state.get("tenant_id")
+        k = state.get("top_k", settings.default_top_k)
 
         tasks = [
-            self.hybrid_tool.run(query=query, k=settings.default_top_k, document_id=document_id, tenant_id=tenant_id),
+            self.hybrid_tool.run(query=query, k=k, document_id=document_id, tenant_id=tenant_id),
             self.graph_tool.run(query, tenant_id=tenant_id),
             self.cypher_tool.run(query, tenant_id=tenant_id),
             self.community_tool.run(query, tenant_id=tenant_id),

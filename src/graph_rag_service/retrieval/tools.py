@@ -144,14 +144,22 @@ class VectorSearchTool:
         self,
         query: str,
         k: int = None,
-        filter: Optional[Dict] = None
+        filter: Optional[Dict] = None,
+        document_id: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         k = k or settings.default_top_k
         query_embedding = await self.llm.embed(query)
+        
+        final_filter = filter or {}
+        if document_id:
+            final_filter["document_id"] = document_id
+            
         results = await self.store.search(
             query_vector=query_embedding,
             k=k,
-            filter=filter
+            filter=final_filter if final_filter else None,
+            tenant_id=tenant_id
         )
         for r in results:
             r["retrieval_method"] = "vector"
@@ -195,45 +203,45 @@ class CommunitySummaryTool:
         tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        1. Find relevant entities via hybrid search
-        2. Group by community_id
-        3. Generate LLM summary for top communities (cached)
-        4. Return community summaries as context chunks
-
-        Args:
-            query: Natural language query (holistic/thematic)
-            k: Number of community summaries to return
-
-        Returns:
-            List of community summaries as context dicts
+        Retrieves global community reports using vector search over community_embeddings.
+        This provides a high-level thematic overview based on actual community findings.
         """
         k = k or 3  # Top-3 communities
 
-        # Step 1: Find relevant entities
-        entity_names = await self._find_relevant_entities(query, limit=20, tenant_id=tenant_id)
-        if not entity_names:
+        query_embedding = await self.llm.embed(query)
+        if not query_embedding:
             return []
 
-        # Step 2: Get community groupings
-        communities = await self.store.get_communities(entity_names, tenant_id=tenant_id)
-        if not communities:
-            return []
+        tenant_filter = "WHERE node.tenant_id = $tenant_id" if tenant_id else ""
+        cypher = f"""
+        CALL db.index.vector.queryNodes('community_embeddings', $search_k, $query_embedding)
+        YIELD node, score
+        {tenant_filter}
+        RETURN node.id as community_id, node.title as title, node.summary as summary, node.findings as findings, score
+        LIMIT $k
+        """
 
-        # Step 3: Generate summaries for top communities
-        results = []
-        for community_id, entities in list(communities.items())[:k]:
-            summary = await self._get_community_summary(community_id, entities, query)
-            if summary:
+        params = {"search_k": k * 3, "k": k, "query_embedding": query_embedding}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+
+        try:
+            rows = await self.store.execute_query(cypher, params)
+            results = []
+            for row in rows:
+                findings_text = "; ".join(row.get("findings", [])) if row.get("findings") else ""
+                text = f"Title: {row.get('title', '')}\nSummary: {row.get('summary', '')}\nFindings: {findings_text}"
                 results.append({
-                    "id": f"community_{community_id}",
-                    "text": summary,
-                    "community_id": community_id,
-                    "entity_count": len(entities),
-                    "retrieval_method": "community_summary",
-                    "score": 0.85  # Community scores are high-confidence thematic results
+                    "id": f"community_{row.get('community_id')}",
+                    "text": text,
+                    "community_id": row.get('community_id'),
+                    "retrieval_method": "global_community_search",
+                    "score": row.get("score", 0.0)
                 })
-
-        return results
+            return results
+        except Exception as e:
+            logger.error(f"Global community vector search failed: {e}")
+            return []
 
     async def _find_relevant_entities(self, query: str, limit: int = 20, tenant_id: Optional[str] = None) -> List[str]:
         """Find entity names most relevant to the query via BM25"""
@@ -801,6 +809,7 @@ class EntitySummarySearchTool:
         query: str,
         k: int = None,
         entity_type: Optional[str] = None,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Find entities whose summaries are relevant to the query.
@@ -823,14 +832,18 @@ class EntitySummarySearchTool:
         if entity_type:
             params["entity_type"] = entity_type
 
+        tenant_filter_bm25 = "WHERE node.tenant_id = $tenant_id" if tenant_id else ""
+        tenant_filter_entity = "AND e.tenant_id = $tenant_id" if tenant_id else ""
+
         # Strategy 1: Use BM25 index to find relevant entities via chunk→entity links
         results: List[Dict[str, Any]] = []
         try:
             bm25_cypher = f"""
             CALL db.index.fulltext.queryNodes('chunk_text_index', $query)
             YIELD node, score
+            {tenant_filter_bm25}
             MATCH (node)-[:MENTIONS]->(e:Entity)
-            WHERE e.summary IS NOT NULL AND e.summary <> ''
+            WHERE e.summary IS NOT NULL AND e.summary <> '' {tenant_filter_entity}
             {type_filter}
             RETURN DISTINCT e.name as name, e.type as type, e.summary as summary,
                    score
@@ -838,6 +851,8 @@ class EntitySummarySearchTool:
             LIMIT $limit
             """
             params["query"] = query
+            if tenant_id:
+                params["tenant_id"] = tenant_id
             rows = await self.store.execute_query(bm25_cypher, params)
             for r in rows:
                 results.append({

@@ -23,7 +23,9 @@ class HippoRAGTool:
         entities = [e.strip() for e in response.split(",") if e.strip()]
         
         if not entities:
-            return []
+            from .tools import HybridSearchTool
+            hybrid = HybridSearchTool(self.store, self.llm)
+            return await hybrid.run(query, k=k, tenant_id=tenant_id)
 
         # Find seed nodes in Neo4j
         seeds = []
@@ -31,15 +33,17 @@ class HippoRAGTool:
             # Case-insensitive contains search
             res = await self.store.execute_query(
                 "MATCH (n:Entity) WHERE toLower(n.name) CONTAINS toLower($name) " + 
-                (f"AND n.tenant_id = '{tenant_id}' " if tenant_id else "") +
+                ("AND n.tenant_id = $tenant_id " if tenant_id else "") +
                 "RETURN id(n) as id LIMIT 3",
-                {"name": e}
+                {"name": e, "tenant_id": tenant_id}
             )
             for row in res:
                 seeds.append(row["id"])
         
         if not seeds:
-            return []
+            from .tools import HybridSearchTool
+            hybrid = HybridSearchTool(self.store, self.llm)
+            return await hybrid.run(query, k=k, tenant_id=tenant_id)
 
         # Run PPR using Neo4j GDS
         graph_name = f"hippo_graph_{tenant_id}" if tenant_id else "hippo_graph_global"
@@ -51,19 +55,21 @@ class HippoRAGTool:
             except Exception:
                 pass
             
-            node_query = f"MATCH (n) WHERE (n:Entity OR n:Chunk) {f'AND n.tenant_id = {repr(tenant_id)}' if tenant_id else ''} RETURN id(n) AS id"
-            rel_query = f"MATCH (s)-[r]->(t) WHERE (s:Entity OR s:Chunk) AND (t:Entity OR t:Chunk) {f'AND s.tenant_id = {repr(tenant_id)} AND t.tenant_id = {repr(tenant_id)}' if tenant_id else ''} RETURN id(s) AS source, id(t) AS target"
+            node_query = f"MATCH (n) WHERE (n:Entity OR n:Chunk) {'AND n.tenant_id = $tenant_id' if tenant_id else ''} RETURN id(n) AS id"
+            rel_query = f"MATCH (s)-[r]->(t) WHERE (s:Entity OR s:Chunk) AND (t:Entity OR t:Chunk) {'AND s.tenant_id = $tenant_id AND t.tenant_id = $tenant_id' if tenant_id else ''} RETURN id(s) AS source, id(t) AS target"
             
             await self.store.execute_query(f"""
                 CALL gds.graph.project.cypher(
                     $graph_name,
                     $node_query,
-                    $rel_query
+                    $rel_query,
+                    {{parameters: {{tenant_id: $tenant_id}}}}
                 )
             """, {
                 "graph_name": graph_name,
                 "node_query": node_query,
-                "rel_query": rel_query
+                "rel_query": rel_query,
+                "tenant_id": tenant_id
             })
             
             ppr_query = """
@@ -100,4 +106,6 @@ class HippoRAGTool:
             
         except Exception as e:
             logger.error(f"HippoRAG PPR failed: {e}")
-            return []
+            from .tools import HybridSearchTool
+            hybrid = HybridSearchTool(self.store, self.llm)
+            return await hybrid.run(query, k=k, tenant_id=tenant_id)

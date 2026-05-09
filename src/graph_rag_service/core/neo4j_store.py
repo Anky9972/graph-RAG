@@ -86,6 +86,18 @@ class Neo4jStore(GraphStore, VectorStore):
                 }}
                 """
                 await session.run(cache_query, dimension=settings.embedding_dimension)
+
+                # Community Embeddings Index
+                community_query = """
+                CREATE VECTOR INDEX community_embeddings IF NOT EXISTS
+                FOR (c:Community)
+                ON c.embedding
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: $dimension,
+                    `vector.similarity_function`: 'cosine'
+                }}
+                """
+                await session.run(community_query, dimension=settings.embedding_dimension)
             except Exception as e:
                 logger.info(f"Vector index creation: {e}")
 

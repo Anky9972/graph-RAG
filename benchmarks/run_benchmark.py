@@ -5,7 +5,7 @@ import httpx
 from typing import List, Dict, Any
 from pydantic import BaseModel
 
-# Mock datasets for benchmarking
+# Mock datasets for benchmarking fallback
 HOTPOT_QA_SAMPLE = [
     {
         "question": "What is the capital of the country where the city of Lyon is located?",
@@ -19,18 +19,40 @@ HOTPOT_QA_SAMPLE = [
     }
 ]
 
-MUSIQUE_SAMPLE = [
-    {
-        "question": "Who is the CEO of the company that produces the iPhone?",
-        "ground_truth": "Tim Cook",
-        "type": "multi-hop"
-    }
-]
-
 class BenchmarkConfig(BaseModel):
-    api_url: str = "http://localhost:8000/api/query"
-    modes: List[str] = ["auto", "naive", "hybrid", "hippo", "got"]
+    api_url: str = "http://localhost:7860/api/query"
+    modes: List[str] = ["naive", "hybrid", "hippo", "global_community"]
     dataset: str = "hotpot_qa"
+    num_samples: int = 10
+
+def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
+    try:
+        from datasets import load_dataset  # type: ignore
+        print(f"Loading {config.dataset} from Hugging Face datasets...")
+        
+        if config.dataset == "hotpot_qa":
+            ds = load_dataset("hotpot_qa", "distractor", split="validation", streaming=True)
+        elif config.dataset == "musique":
+            ds = load_dataset("bdsaglam/musique", split="validation", streaming=True)
+        else:
+            ds = load_dataset(config.dataset, split="validation", streaming=True)
+            
+        samples = []
+        for item in ds:
+            if len(samples) >= config.num_samples:
+                break
+            samples.append({
+                "question": item.get("question", ""),
+                "ground_truth": item.get("answer", ""),
+                "type": item.get("level", "unknown")
+            })
+        return samples
+    except ImportError:
+        print("HF 'datasets' library not installed. Falling back to mock dataset.")
+        return HOTPOT_QA_SAMPLE
+    except Exception as e:
+        print(f"Failed to load dataset from HF: {e}. Falling back to mock dataset.")
+        return HOTPOT_QA_SAMPLE
 
 async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, mode: str, q: Dict[str, str]) -> Dict[str, Any]:
     payload = {
@@ -42,9 +64,6 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
     
     start_time = time.time()
     try:
-        # Assuming admin/test user token is not needed for a mock endpoint or we would need to auth.
-        # For this script, we'll assume the endpoint allows unauthenticated or we pass a mock token.
-        # We will add a mock Authorization header just in case.
         headers = {"Authorization": "Bearer test-token"}
         
         response = await client.post(config.api_url, json=payload, headers=headers, timeout=60.0)
@@ -54,7 +73,6 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
         duration = time.time() - start_time
         answer = data.get("answer", "")
         
-        # Simple string matching for evaluation
         is_correct = q["ground_truth"].lower() in answer.lower()
         
         return {
@@ -77,7 +95,7 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
 
 async def run_benchmark():
     config = BenchmarkConfig()
-    dataset = HOTPOT_QA_SAMPLE if config.dataset == "hotpot_qa" else MUSIQUE_SAMPLE
+    dataset = load_hf_dataset(config)
     
     print(f"Starting benchmark on {config.dataset} with {len(dataset)} questions...")
     print(f"Modes to test: {config.modes}")
@@ -94,7 +112,6 @@ async def run_benchmark():
                 status = "PASS" if res.get("is_correct") else "FAIL"
                 print(f"    [{status}] Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
                 
-    # Aggregate results
     summary = {}
     for r in results:
         m = r["mode"]
@@ -108,9 +125,9 @@ async def run_benchmark():
         
     print("\n=== BENCHMARK RESULTS ===")
     for m, stats in summary.items():
-        accuracy = (stats["correct"] / stats["total"]) * 100
-        avg_time = stats["time"] / stats["total"]
-        print(f"Mode: {m:<10} | Accuracy: {accuracy:>5.1f}% | Avg Time: {avg_time:>5.2f}s")
+        accuracy = (stats["correct"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+        avg_time = stats["time"] / stats["total"] if stats["total"] > 0 else 0
+        print(f"Mode: {m:<15} | Accuracy: {accuracy:>5.1f}% | Avg Time: {avg_time:>5.2f}s")
 
 if __name__ == "__main__":
     asyncio.run(run_benchmark())

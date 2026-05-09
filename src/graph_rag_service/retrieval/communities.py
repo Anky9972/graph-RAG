@@ -46,13 +46,13 @@ class CommunityBuilder:
         # Node and Relationship queries with tenant filtering
         node_query = f"""
             MATCH (n:Entity)
-            {f"WHERE n.tenant_id = '{tenant_id}'" if tenant_id else ""}
+            {f"WHERE n.tenant_id = $tenant_id" if tenant_id else ""}
             RETURN id(n) AS id
         """
         
         rel_query = f"""
             MATCH (s:Entity)-[r]->(t:Entity)
-            {f"WHERE s.tenant_id = '{tenant_id}' AND t.tenant_id = '{tenant_id}'" if tenant_id else ""}
+            {f"WHERE s.tenant_id = $tenant_id AND t.tenant_id = $tenant_id" if tenant_id else ""}
             RETURN id(s) AS source, id(t) AS target
         """
 
@@ -61,7 +61,8 @@ class CommunityBuilder:
         CALL gds.graph.project.cypher(
             $graph_name,
             $node_query,
-            $rel_query
+            $rel_query,
+            {parameters: {tenant_id: $tenant_id}}
         )
         YIELD graphName, nodeCount, relationshipCount
         """
@@ -70,7 +71,8 @@ class CommunityBuilder:
             await self.store.execute_query(project_query, {
                 "graph_name": graph_name,
                 "node_query": node_query,
-                "rel_query": rel_query
+                "rel_query": rel_query,
+                "tenant_id": tenant_id
             })
 
             # Run Leiden to write community IDs to the nodes
@@ -110,21 +112,25 @@ class CommunityBuilder:
         """
         Creates (Community) nodes in Neo4j based on the 'leiden_community' properties.
         """
-        # In a true hierarchical setup, Leiden with includeIntermediateCommunities writes arrays.
-        # For simplicity, we'll group by the assigned primary community.
-        
         tenant_filter = "n.tenant_id = $tenant_id AND" if tenant_id else ""
         
         query = f"""
         MATCH (n:Entity)
         WHERE {tenant_filter} n.leiden_community IS NOT NULL
-        WITH n.leiden_community AS comm_id, collect(n) AS members
-        MERGE (c:Community {{id: toString(comm_id)}})
-        SET c.level = 0,
-            c.tenant_id = $tenant_id
-        WITH c, members
-        UNWIND members AS m
-        MERGE (m)-[:IN_COMMUNITY]->(c)
+        WITH n, n.leiden_community AS comms
+        
+        MERGE (c0:Community {{id: "0:" + toString(comms[0])}})
+        SET c0.level = 0, c0.tenant_id = $tenant_id
+        MERGE (n)-[:IN_COMMUNITY]->(c0)
+        
+        WITH DISTINCT comms
+        WHERE size(comms) > 1
+        UNWIND range(0, size(comms)-2) AS level
+        MERGE (c1:Community {{id: toString(level) + ":" + toString(comms[level])}})
+        SET c1.level = level, c1.tenant_id = $tenant_id
+        MERGE (c2:Community {{id: toString(level+1) + ":" + toString(comms[level+1])}})
+        SET c2.level = level+1, c2.tenant_id = $tenant_id
+        MERGE (c1)-[:PARENT]->(c2)
         """
         
         await self.store.execute_query(query, {"tenant_id": tenant_id})
@@ -138,9 +144,9 @@ class CommunityBuilder:
         
         query = f"""
         MATCH (comm:Community {{id: $community_id}})<-[:IN_COMMUNITY]-(e:Entity)
-        MATCH (e)-[:MENTIONS|RELATED_TO]-(c:Chunk)
+        MATCH (c:Chunk)-[:MENTIONS]->(e)
         {tenant_filter}
-        RETURN DISTINCT c.text AS text
+        RETURN DISTINCT c.id AS chunk_id, c.text AS text, c.document_id AS document_id
         LIMIT 50
         """
         
@@ -149,7 +155,7 @@ class CommunityBuilder:
             "tenant_id": tenant_id
         })
         
-        return [r["text"] for r in results]
+        return [f"Chunk {r.get('chunk_id')}: {r.get('text')}" for r in results]
 
     async def generate_report(self, community_id: str, tenant_id: Optional[str] = None) -> Optional[CommunityReport]:
         """
@@ -254,6 +260,17 @@ class CommunityBuilder:
                 CALL db.create.setNodeVectorProperty(c, 'embedding', $embedding)
             """, {
                 "community_id": report.community_id,
-                "tenant_id": report.tenant_id,
                 "embedding": embedding
             })
+
+    async def generate_all_reports(self, tenant_id: Optional[str] = None) -> List[CommunityReport]:
+        """Generate reports for all communities."""
+        tenant_filter = "WHERE c.tenant_id = $tenant_id" if tenant_id else ""
+        query = f"MATCH (c:Community) {tenant_filter} RETURN c.id AS id"
+        results = await self.store.execute_query(query, {"tenant_id": tenant_id})
+        reports = []
+        for r in results:
+            report = await self.generate_report(r["id"], tenant_id)
+            if report:
+                reports.append(report)
+        return reports

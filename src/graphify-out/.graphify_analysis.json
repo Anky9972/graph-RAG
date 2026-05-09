@@ -1,0 +1,1014 @@
+{
+  "communities": {
+    "0": [
+      "core_llm_factory_llmfactory",
+      "core_llm_factory_rationale_272",
+      "core_models_ontologyschema",
+      "core_models_rationale_121",
+      "core_neo4j_store_neo4jstore_load_ontology",
+      "core_neo4j_store_rationale_619",
+      "ingestion_ontology_generator_ontologygenerator_generate_initial_ontology",
+      "ingestion_ontology_generator_rationale_30",
+      "routers_ontology_approve_drift_report",
+      "routers_ontology_list_drift_reports",
+      "routers_ontology_rationale_199",
+      "routers_ontology_rationale_234",
+      "routers_ontology_rationale_262",
+      "routers_ontology_rationale_285",
+      "routers_ontology_reject_drift_report",
+      "routers_ontology_trigger_drift_detection",
+      "services_ontology_drift_detector_bump_version",
+      "services_ontology_drift_detector_driftreport",
+      "services_ontology_drift_detector_ontologydriftdetector_apply_drift_report",
+      "services_ontology_drift_detector_ontologydriftdetector_compute_diff",
+      "services_ontology_drift_detector_ontologydriftdetector_detect_drift",
+      "services_ontology_drift_detector_ontologydriftdetector_get_drift_report",
+      "services_ontology_drift_detector_ontologydriftdetector_get_random_chunks",
+      "services_ontology_drift_detector_ontologydriftdetector_load_drift_report",
+      "services_ontology_drift_detector_ontologydriftdetector_save_drift_report",
+      "services_ontology_drift_detector_py",
+      "services_ontology_drift_detector_rationale_1",
+      "services_ontology_drift_detector_rationale_136",
+      "services_ontology_drift_detector_rationale_152",
+      "services_ontology_drift_detector_rationale_180",
+      "services_ontology_drift_detector_rationale_186",
+      "services_ontology_drift_detector_rationale_27",
+      "services_ontology_drift_detector_rationale_42",
+      "services_ontology_drift_detector_rationale_62",
+      "services_ontology_drift_detector_rationale_91",
+      "services_ontology_drift_detector_row_to_report"
+    ],
+    "1": [
+      "api_models_communityassignresponse",
+      "api_models_crawlrequest",
+      "api_models_deduplicateresponse",
+      "api_models_documentuploadresponse",
+      "api_models_entitychatrequest",
+      "api_models_entityupdaterequest",
+      "api_models_graphupdaterequest",
+      "api_models_ingestionstatusresponse",
+      "api_models_loginrequest",
+      "api_models_ontologyrefinerequest",
+      "api_models_ontologyrefineresponse",
+      "api_models_ontologyresponse",
+      "api_models_ontologyupdaterequest",
+      "api_models_py",
+      "api_models_queryrequest",
+      "api_models_rationale_1",
+      "api_models_rationale_261",
+      "api_models_rationale_286",
+      "api_models_rationale_331",
+      "api_models_rationale_358",
+      "api_models_registerrequest",
+      "api_models_reportrequest",
+      "api_models_scraperequest",
+      "api_models_systemhealthresponse",
+      "api_models_systemstatsresponse",
+      "api_models_tokenresponse",
+      "basemodel",
+      "core_models_document",
+      "core_models_extractionresult",
+      "core_models_rationale_1",
+      "core_models_rationale_131"
+    ],
+    "2": [
+      "core_neo4j_store_neo4jstore_fallback_search",
+      "core_neo4j_store_rationale_569",
+      "retrieval_agent_agentretrievalsystem",
+      "retrieval_agent_agentretrievalsystem_astream",
+      "retrieval_agent_agentretrievalsystem_build_graph",
+      "retrieval_agent_agentretrievalsystem_cache_get",
+      "retrieval_agent_agentretrievalsystem_cache_set",
+      "retrieval_agent_agentretrievalsystem_community_search",
+      "retrieval_agent_agentretrievalsystem_cypher_query",
+      "retrieval_agent_agentretrievalsystem_decompose_query",
+      "retrieval_agent_agentretrievalsystem_drift_expand",
+      "retrieval_agent_agentretrievalsystem_format_context",
+      "retrieval_agent_agentretrievalsystem_got_explore",
+      "retrieval_agent_agentretrievalsystem_hippo_search",
+      "retrieval_agent_agentretrievalsystem_make_initial_state",
+      "retrieval_agent_agentretrievalsystem_route_query",
+      "retrieval_agent_agentretrievalsystem_score_tool_results",
+      "retrieval_agent_agentretrievalsystem_should_continue",
+      "retrieval_agent_agentretrievalsystem_synthesize_response",
+      "retrieval_agent_rationale_100",
+      "retrieval_agent_rationale_113",
+      "retrieval_agent_rationale_270",
+      "retrieval_agent_rationale_39",
+      "retrieval_agent_rationale_512",
+      "retrieval_agent_rationale_540",
+      "retrieval_agent_rationale_553",
+      "retrieval_agent_rationale_597",
+      "retrieval_agent_rationale_643",
+      "retrieval_agent_rationale_720",
+      "retrieval_agent_rationale_79"
+    ],
+    "3": [
+      "core_abstractions_add_vectors",
+      "core_abstractions_complete",
+      "core_abstractions_complete_structured",
+      "core_abstractions_create_node",
+      "core_abstractions_create_relationship",
+      "core_abstractions_delete_vectors",
+      "core_abstractions_disconnect",
+      "core_abstractions_embed",
+      "core_abstractions_embed_batch",
+      "core_abstractions_find_path",
+      "core_abstractions_get_neighbors",
+      "core_abstractions_merge_entities",
+      "core_abstractions_py",
+      "core_abstractions_rationale_1",
+      "core_abstractions_search",
+      "core_llm_factory_rationale_135",
+      "core_llm_factory_rationale_183",
+      "core_llm_factory_rationale_227",
+      "core_llm_factory_rationale_96",
+      "core_neo4j_store_neo4jstore_create_chunk_with_entities",
+      "core_neo4j_store_rationale_130",
+      "core_neo4j_store_rationale_166",
+      "core_neo4j_store_rationale_270",
+      "core_neo4j_store_rationale_295",
+      "core_neo4j_store_rationale_487",
+      "core_neo4j_store_rationale_536",
+      "core_neo4j_store_rationale_57",
+      "core_neo4j_store_rationale_738",
+      "str"
+    ],
+    "4": [
+      "core_abstractions_execute_query",
+      "core_neo4j_store_neo4jstore_assign_community_ids",
+      "core_neo4j_store_neo4jstore_bm25_search",
+      "core_neo4j_store_neo4jstore_create_user",
+      "core_neo4j_store_neo4jstore_get_communities",
+      "core_neo4j_store_neo4jstore_get_community_entities",
+      "core_neo4j_store_neo4jstore_get_entities_at_time",
+      "core_neo4j_store_neo4jstore_get_eval_results",
+      "core_neo4j_store_neo4jstore_get_semantic_cache",
+      "core_neo4j_store_neo4jstore_get_user",
+      "core_neo4j_store_neo4jstore_save_eval_result",
+      "core_neo4j_store_neo4jstore_save_ontology",
+      "core_neo4j_store_py",
+      "core_neo4j_store_rationale_1",
+      "core_neo4j_store_rationale_220",
+      "core_neo4j_store_rationale_26",
+      "core_neo4j_store_rationale_331",
+      "core_neo4j_store_rationale_372",
+      "core_neo4j_store_rationale_407",
+      "core_neo4j_store_rationale_418",
+      "core_neo4j_store_rationale_463",
+      "core_neo4j_store_rationale_596",
+      "core_neo4j_store_rationale_647",
+      "core_neo4j_store_rationale_681",
+      "core_neo4j_store_rationale_696",
+      "core_neo4j_store_rationale_712",
+      "core_neo4j_store_rationale_788",
+      "core_neo4j_store_rationale_820"
+    ],
+    "5": [
+      "api_simulation_get_global_store",
+      "api_simulation_get_sandbox_report",
+      "api_simulation_interviewrequest",
+      "api_simulation_live_interview_agent",
+      "api_simulation_py",
+      "api_simulation_rationale_109",
+      "api_simulation_rationale_115",
+      "api_simulation_rationale_31",
+      "api_simulation_rationale_93",
+      "api_simulation_start_persona_generation",
+      "api_simulation_start_simulation_tick",
+      "retrieval_report_agent_panoramasearchtool",
+      "retrieval_report_agent_py",
+      "retrieval_report_agent_rationale_1",
+      "retrieval_report_agent_rationale_147",
+      "retrieval_report_agent_rationale_272",
+      "retrieval_report_agent_rationale_412",
+      "retrieval_report_agent_rationale_461",
+      "retrieval_report_agent_rationale_492",
+      "retrieval_report_agent_rationale_507",
+      "retrieval_report_agent_rationale_539",
+      "retrieval_report_agent_reportagent_act",
+      "retrieval_report_agent_reportagent_react_loop",
+      "retrieval_report_agent_reportagent_think",
+      "retrieval_report_agent_reportagent_write_executive_summary",
+      "retrieval_report_agent_reportagent_write_section_with_confidence",
+      "retrieval_report_agent_reportsection"
+    ],
+    "6": [
+      "api_admin_approve_ontology",
+      "api_admin_check_admin_scope",
+      "api_admin_delete_document",
+      "api_admin_delete_node",
+      "api_admin_force_merge_entities",
+      "api_admin_get_admin_stats",
+      "api_admin_get_graph_store",
+      "api_admin_get_pending_ontology",
+      "api_admin_get_review_queue",
+      "api_admin_get_tasks",
+      "api_admin_list_users",
+      "api_admin_py",
+      "api_admin_rationale_111",
+      "api_admin_rationale_121",
+      "api_admin_rationale_135",
+      "api_admin_rationale_19",
+      "api_admin_rationale_32",
+      "api_admin_rationale_56",
+      "api_admin_rationale_89",
+      "api_admin_reject_ontology",
+      "api_admin_search_nodes",
+      "api_admin_systemconfig",
+      "api_admin_taskdashboardresponse",
+      "api_admin_update_config",
+      "api_admin_update_user_role",
+      "routers_documents_rationale_257"
+    ],
+    "7": [
+      "api_init_rationale_1",
+      "core_init_rationale_1",
+      "graph_rag_service_init_rationale_1",
+      "ingestion_init_rationale_1",
+      "init_py",
+      "observability_init_rationale_1",
+      "retrieval_init_rationale_1",
+      "routers_entities_get_entity_summary",
+      "routers_entities_rationale_119",
+      "routers_entities_rationale_89",
+      "routers_entities_trigger_entity_enrichment",
+      "services_entity_enricher_enrichmentresult",
+      "services_entity_enricher_entityenricher_enrich_all_entities",
+      "services_entity_enricher_entityenricher_enrich_entity",
+      "services_entity_enricher_entityenricher_enrich_single",
+      "services_entity_enricher_py",
+      "services_entity_enricher_rationale_1",
+      "services_entity_enricher_rationale_121",
+      "services_entity_enricher_rationale_141",
+      "services_entity_enricher_rationale_155",
+      "services_entity_enricher_rationale_23",
+      "services_entity_enricher_rationale_32",
+      "services_entity_enricher_rationale_57",
+      "services_init_rationale_1",
+      "workers_init_rationale_1"
+    ],
+    "8": [
+      "ingestion_document_processor_documentprocessor_chunk_document",
+      "ingestion_document_processor_documentprocessor_extract_csv",
+      "ingestion_document_processor_documentprocessor_extract_docx",
+      "ingestion_document_processor_documentprocessor_extract_excel",
+      "ingestion_document_processor_documentprocessor_extract_json",
+      "ingestion_document_processor_documentprocessor_extract_pdf",
+      "ingestion_document_processor_documentprocessor_extract_pptx",
+      "ingestion_document_processor_documentprocessor_extract_text",
+      "ingestion_document_processor_documentprocessor_extract_txt",
+      "ingestion_document_processor_documentprocessor_generate_document_id",
+      "ingestion_document_processor_documentprocessor_process_document",
+      "ingestion_document_processor_py",
+      "ingestion_document_processor_rationale_125",
+      "ingestion_document_processor_rationale_149",
+      "ingestion_document_processor_rationale_170",
+      "ingestion_document_processor_rationale_175",
+      "ingestion_document_processor_rationale_197",
+      "ingestion_document_processor_rationale_225",
+      "ingestion_document_processor_rationale_264",
+      "ingestion_document_processor_rationale_306",
+      "ingestion_document_processor_rationale_32",
+      "ingestion_document_processor_rationale_345",
+      "ingestion_document_processor_rationale_62",
+      "ingestion_document_processor_rationale_92"
+    ],
+    "9": [
+      "core_models_chunk",
+      "core_models_rationale_94",
+      "ingestion_extractor_knowledgeextractor",
+      "ingestion_extractor_knowledgeextractor_create_extraction_prompt",
+      "ingestion_extractor_knowledgeextractor_extract_from_chunk",
+      "ingestion_extractor_knowledgeextractor_generate_embeddings",
+      "ingestion_extractor_rationale_19",
+      "ingestion_extractor_rationale_195",
+      "ingestion_extractor_rationale_289",
+      "ingestion_extractor_rationale_38",
+      "ingestion_extractor_rationale_94",
+      "routers_graph_rationale_232",
+      "routers_graph_update_graph_from_text",
+      "services_graph_memory_updater_graphmemoryupdater_get_extractor",
+      "services_graph_memory_updater_graphmemoryupdater_is_fact_assertion",
+      "services_graph_memory_updater_graphupdateresult",
+      "services_graph_memory_updater_py",
+      "services_graph_memory_updater_rationale_1",
+      "services_graph_memory_updater_rationale_174",
+      "services_graph_memory_updater_rationale_23",
+      "services_graph_memory_updater_rationale_33",
+      "services_graph_memory_updater_rationale_59"
+    ],
+    "10": [
+      "core_models_communityreport",
+      "core_models_rationale_199",
+      "retrieval_communities_communitybuilder",
+      "retrieval_communities_communitybuilder_collect_evidence",
+      "retrieval_communities_communitybuilder_create_community_nodes",
+      "retrieval_communities_communitybuilder_embed_report",
+      "retrieval_communities_communitybuilder_run_leiden",
+      "retrieval_communities_py",
+      "retrieval_communities_rationale_110",
+      "retrieval_communities_rationale_134",
+      "retrieval_communities_rationale_155",
+      "retrieval_communities_rationale_21",
+      "retrieval_communities_rationale_244",
+      "retrieval_communities_rationale_31",
+      "retrieval_report_agent_rationale_310",
+      "retrieval_report_agent_rationale_375",
+      "retrieval_report_agent_reportagent_compile_markdown",
+      "retrieval_report_agent_reportagent_decompose_topic",
+      "retrieval_report_agent_reportresult",
+      "routers_report_generate_report",
+      "routers_report_rationale_23"
+    ],
+    "11": [
+      "api_auth_check_scope",
+      "api_auth_create_access_token",
+      "api_auth_decode_token",
+      "api_auth_get_current_user",
+      "api_auth_get_password_hash",
+      "api_auth_py",
+      "api_auth_rationale_1",
+      "api_auth_rationale_125",
+      "api_auth_rationale_172",
+      "api_auth_rationale_56",
+      "api_auth_rationale_84",
+      "api_auth_token",
+      "api_auth_tokendata",
+      "api_auth_user",
+      "api_auth_verify_password",
+      "routers_auth_get_me",
+      "routers_auth_login",
+      "routers_auth_rationale_60",
+      "routers_auth_rationale_93",
+      "routers_auth_register"
+    ],
+    "12": [
+      "api_server_rationale_91",
+      "api_server_startup_event",
+      "ingestion_ontology_generator_rationale_121",
+      "ingestion_pipeline_ingestionpipeline",
+      "ingestion_pipeline_ingestionpipeline_close",
+      "ingestion_pipeline_ingestionpipeline_ingest_document",
+      "ingestion_pipeline_ingestionpipeline_initialize",
+      "ingestion_pipeline_ingestionpipeline_store_extraction",
+      "ingestion_pipeline_rationale_125",
+      "ingestion_pipeline_rationale_152",
+      "ingestion_pipeline_rationale_21",
+      "ingestion_pipeline_rationale_58",
+      "routers_ontology_get_ontology",
+      "routers_ontology_rationale_103",
+      "routers_ontology_rationale_156",
+      "routers_ontology_rationale_24",
+      "routers_ontology_refine_ontology",
+      "routers_ontology_update_ontology"
+    ],
+    "13": [
+      "retrieval_report_agent_insightforgetool",
+      "retrieval_report_agent_quicksearchtool",
+      "retrieval_report_agent_rationale_163",
+      "retrieval_report_agent_rationale_197",
+      "retrieval_report_agent_rationale_212",
+      "retrieval_report_agent_rationale_49",
+      "retrieval_tools_cyphergenerationtool",
+      "retrieval_tools_cyphergenerationtool_correct_cypher",
+      "retrieval_tools_cyphergenerationtool_correct_cypher_with_error",
+      "retrieval_tools_cyphergenerationtool_generate_cypher",
+      "retrieval_tools_cyphergenerationtool_validate_cypher",
+      "retrieval_tools_graphtraversaltool_extract_entities_from_query",
+      "retrieval_tools_hybridsearchtool_run",
+      "retrieval_tools_rationale_197",
+      "retrieval_tools_rationale_360",
+      "retrieval_tools_rationale_384",
+      "retrieval_tools_rationale_46",
+      "retrieval_tools_rationale_805"
+    ],
+    "14": [
+      "api_dependencies_get_ingestion_pipeline",
+      "api_dependencies_get_redis_client",
+      "api_dependencies_get_retrieval_agent",
+      "api_dependencies_py",
+      "api_routers_documents_py",
+      "api_routers_entities_py",
+      "api_routers_evaluation_py",
+      "api_routers_graph_py",
+      "api_routers_memory_py",
+      "api_routers_ontology_py",
+      "api_routers_query_py",
+      "api_routers_report_py",
+      "config_py",
+      "core_storage_py",
+      "graph_rag_service_config_redis_url",
+      "ingestion_pipeline_py",
+      "retrieval_agent_py",
+      "routers_documents_rationale_366"
+    ],
+    "15": [
+      "core_llm_factory_rationale_46",
+      "core_llm_factory_unifiedllmprovider_initialize_provider",
+      "retrieval_agent_rationale_525",
+      "retrieval_tools_entitysummarysearchtool",
+      "retrieval_tools_graphtraversaltool",
+      "retrieval_tools_llmjudge",
+      "retrieval_tools_llmjudge_init",
+      "retrieval_tools_llmjudge_score",
+      "retrieval_tools_metadatafiltertool",
+      "retrieval_tools_py",
+      "retrieval_tools_rationale_135",
+      "retrieval_tools_rationale_322",
+      "retrieval_tools_rationale_519",
+      "retrieval_tools_rationale_568",
+      "retrieval_tools_rationale_582",
+      "retrieval_tools_rationale_781",
+      "retrieval_tools_vectorsearchtool"
+    ],
+    "16": [
+      "workers_celery_worker_check_ontology_drift_task",
+      "workers_celery_worker_cleanup_orphan_nodes_task",
+      "workers_celery_worker_enrich_entities_task",
+      "workers_celery_worker_generate_personas_task",
+      "workers_celery_worker_ingest_document_task",
+      "workers_celery_worker_ingest_documents_batch_task",
+      "workers_celery_worker_init_worker_loop",
+      "workers_celery_worker_py",
+      "workers_celery_worker_rationale_1",
+      "workers_celery_worker_rationale_153",
+      "workers_celery_worker_rationale_206",
+      "workers_celery_worker_rationale_251",
+      "workers_celery_worker_rationale_278",
+      "workers_celery_worker_rationale_311",
+      "workers_celery_worker_rationale_70",
+      "workers_celery_worker_rationale_81",
+      "workers_celery_worker_run_async"
+    ],
+    "17": [
+      "core_abstractions_compute_similarity",
+      "core_abstractions_resolve",
+      "core_entity_resolver_rationale_108",
+      "core_entity_resolver_rationale_132",
+      "core_entity_resolver_rationale_136",
+      "core_entity_resolver_rationale_171",
+      "core_entity_resolver_rationale_18",
+      "core_entity_resolver_rationale_191",
+      "core_entity_resolver_rationale_34",
+      "core_entity_resolver_rationale_66",
+      "core_entity_resolver_semanticentityresolver",
+      "core_entity_resolver_semanticentityresolver_embedding_similarity",
+      "core_entity_resolver_semanticentityresolver_find_duplicates",
+      "core_entity_resolver_semanticentityresolver_get_entity_embedding",
+      "core_entity_resolver_semanticentityresolver_property_similarity",
+      "core_entity_resolver_semanticentityresolver_string_similarity"
+    ],
+    "18": [
+      "abc",
+      "core_abstractions_rationale_12",
+      "core_abstractions_rationale_173",
+      "core_abstractions_rationale_245",
+      "core_entity_resolver_rationale_1",
+      "core_models_entity",
+      "core_models_rationale_35",
+      "core_models_rationale_65",
+      "core_models_relationship",
+      "entityresolver",
+      "graphstore",
+      "ingestion_extractor_knowledgeextractor_parse_extraction",
+      "ingestion_extractor_py",
+      "ingestion_extractor_rationale_233",
+      "llmprovider",
+      "vectorstore"
+    ],
+    "19": [
+      "api_simulation_get_global_llm",
+      "core_llm_factory_create",
+      "core_llm_factory_create_from_config",
+      "core_llm_factory_py",
+      "core_llm_factory_rationale_33",
+      "core_llm_factory_unifiedllmprovider",
+      "ingestion_persona_generator_personagenerator_generate_personas_for_type",
+      "ingestion_persona_generator_personaprofile",
+      "ingestion_persona_generator_py",
+      "ingestion_persona_generator_rationale_26",
+      "ingestion_persona_generator_rationale_36",
+      "retrieval_hippo_tool_hipporagtool",
+      "retrieval_hippo_tool_py",
+      "retrieval_hippo_tool_rationale_10",
+      "routers_entities_entity_interview",
+      "routers_entities_rationale_155"
+    ],
+    "20": [
+      "graph_rag_service_main_main",
+      "graph_rag_service_main_rationale_1",
+      "main_py",
+      "observability_tracing_get_meter",
+      "observability_tracing_get_tracer",
+      "observability_tracing_py",
+      "observability_tracing_rationale_1",
+      "observability_tracing_rationale_28",
+      "observability_tracing_rationale_71",
+      "observability_tracing_rationale_76",
+      "observability_tracing_setup_observability"
+    ],
+    "21": [
+      "workers_celery_worker_rationale_264",
+      "workers_celery_worker_run_simulation_tick_task",
+      "workers_simulation_runner_agentaction",
+      "workers_simulation_runner_py",
+      "workers_simulation_runner_rationale_28",
+      "workers_simulation_runner_rationale_35",
+      "workers_simulation_runner_rationale_45",
+      "workers_simulation_runner_rationale_67",
+      "workers_simulation_runner_simulationmanager",
+      "workers_simulation_runner_simulationmanager_get_active_agents",
+      "workers_simulation_runner_simulationmanager_process_agent_turn"
+    ],
+    "22": [
+      "retrieval_tools_ragevaluator",
+      "retrieval_tools_ragevaluator_answer_relevancy",
+      "retrieval_tools_ragevaluator_context_precision",
+      "retrieval_tools_ragevaluator_evaluate",
+      "retrieval_tools_ragevaluator_faithfulness",
+      "retrieval_tools_rationale_679",
+      "retrieval_tools_rationale_694",
+      "retrieval_tools_rationale_721",
+      "retrieval_tools_rationale_741",
+      "retrieval_tools_rationale_757"
+    ],
+    "23": [
+      "api_models_confidencejudgmentresponse",
+      "api_models_queryresponse",
+      "api_models_rationale_83",
+      "core_models_confidencejudgment",
+      "core_models_queryresult",
+      "core_models_rationale_140",
+      "core_models_rationale_149",
+      "routers_query_query",
+      "routers_query_rationale_23"
+    ],
+    "24": [
+      "core_models_nodetype",
+      "core_models_ontologyversion",
+      "core_models_rationale_13",
+      "core_models_rationale_175",
+      "core_models_rationale_20",
+      "core_models_rationale_28",
+      "core_models_relationtype",
+      "core_models_searchmethod",
+      "enum"
+    ],
+    "25": [
+      "ingestion_web_crawler_py",
+      "ingestion_web_crawler_rationale_9",
+      "ingestion_web_crawler_webcrawler_crawl",
+      "ingestion_web_crawler_webcrawler_crawl_recursive",
+      "ingestion_web_crawler_webcrawler_is_same_domain",
+      "routers_documents_crawl_urls",
+      "routers_documents_rationale_113",
+      "routers_documents_rationale_185",
+      "routers_documents_scrape_url"
+    ],
+    "26": [
+      "api_routers_system_py",
+      "routers_system_get_my_stats",
+      "routers_system_get_supported_formats",
+      "routers_system_get_system_stats",
+      "routers_system_health_check",
+      "routers_system_rationale_112",
+      "routers_system_rationale_150",
+      "routers_system_rationale_75",
+      "workers_celery_worker_rationale_245"
+    ],
+    "27": [
+      "core_storage_get_storage",
+      "core_storage_localstorage",
+      "core_storage_localstorage_delete_file",
+      "core_storage_localstorage_read_file",
+      "core_storage_localstorage_save_file",
+      "core_storage_rationale_52",
+      "core_storage_storageprovider",
+      "core_storage_storageprovider_normalize_filename"
+    ],
+    "28": [
+      "core_abstractions_connect",
+      "core_neo4j_store_neo4jstore_create_constraints",
+      "core_neo4j_store_neo4jstore_create_fulltext_index",
+      "core_neo4j_store_neo4jstore_create_vector_index",
+      "core_neo4j_store_rationale_109",
+      "core_neo4j_store_rationale_45",
+      "core_neo4j_store_rationale_64",
+      "core_neo4j_store_rationale_93"
+    ],
+    "29": [
+      "retrieval_tools_communitysummarytool",
+      "retrieval_tools_communitysummarytool_find_relevant_entities",
+      "retrieval_tools_communitysummarytool_get_community_summary",
+      "retrieval_tools_communitysummarytool_get_redis",
+      "retrieval_tools_rationale_164",
+      "retrieval_tools_rationale_182",
+      "retrieval_tools_rationale_239",
+      "retrieval_tools_rationale_265"
+    ],
+    "30": [
+      "basesettings",
+      "graph_rag_service_config_rationale_14",
+      "graph_rag_service_config_rationale_179",
+      "graph_rag_service_config_rationale_189",
+      "graph_rag_service_config_settings",
+      "graph_rag_service_config_settings_get_llm_config",
+      "graph_rag_service_config_settings_model_post_init"
+    ],
+    "31": [
+      "api_models_conversation",
+      "api_models_conversationlistresponse",
+      "api_models_message",
+      "routers_memory_get_conversation",
+      "routers_memory_list_conversations",
+      "routers_memory_rationale_20",
+      "routers_memory_rationale_45"
+    ],
+    "32": [
+      "api_models_evaldashboardresponse",
+      "api_models_evaltrendpoint",
+      "api_models_rationale_239",
+      "api_models_rationale_249",
+      "routers_evaluation_get_eval_dashboard",
+      "routers_evaluation_rationale_71"
+    ],
+    "33": [
+      "api_models_evalresponse",
+      "api_models_rationale_227",
+      "core_models_evalresult",
+      "core_models_rationale_185",
+      "routers_evaluation_evaluate_response",
+      "routers_evaluation_rationale_23"
+    ],
+    "34": [
+      "api_models_graphedge",
+      "api_models_graphnode",
+      "api_models_graphvisualizationresponse",
+      "routers_graph_get_graph_visualization",
+      "routers_graph_rationale_24"
+    ],
+    "35": [
+      "retrieval_agent_rationale_432",
+      "retrieval_tools_hybridsearchtool",
+      "retrieval_tools_hybridsearchtool_rrf_fuse",
+      "retrieval_tools_rationale_113",
+      "retrieval_tools_rationale_24"
+    ],
+    "36": [
+      "ingestion_ontology_generator_ontologygenerator_get_extraction_prompt",
+      "ingestion_ontology_generator_py",
+      "ingestion_ontology_generator_rationale_1",
+      "ingestion_ontology_generator_rationale_16",
+      "ingestion_ontology_generator_rationale_200"
+    ],
+    "37": [
+      "api_server_is_valid_origin",
+      "api_server_py",
+      "api_server_rationale_1",
+      "api_server_serve_index",
+      "api_server_shutdown_event"
+    ],
+    "38": [
+      "api_admin_list_documents",
+      "api_models_documentinfo",
+      "api_models_documentlistresponse",
+      "routers_documents_rationale_230"
+    ],
+    "39": [
+      "api_models_rationale_344",
+      "api_models_reportresponse"
+    ],
+    "40": [
+      "api_models_entitysummaryresponse",
+      "api_models_rationale_320"
+    ],
+    "41": [
+      "api_models_communitysummaryresponse",
+      "api_models_rationale_267"
+    ],
+    "42": [
+      "api_models_driftlistresponse",
+      "api_models_rationale_391"
+    ],
+    "43": [
+      "core_models_agentstate",
+      "core_models_rationale_164"
+    ],
+    "44": [
+      "api_models_driftreportresponse",
+      "api_models_rationale_376"
+    ],
+    "45": [
+      "api_models_enrichmentstatusresponse",
+      "api_models_rationale_311"
+    ],
+    "46": [
+      "api_models_entitychatresponse",
+      "api_models_rationale_366"
+    ],
+    "47": [
+      "api_models_rationale_278",
+      "api_models_supportedformatsresponse"
+    ],
+    "48": [
+      "api_models_evalrequest",
+      "api_models_rationale_218"
+    ],
+    "49": [
+      "api_models_graphupdateresponse",
+      "api_models_rationale_299"
+    ],
+    "50": [
+      "routers_documents_preview_document",
+      "routers_documents_rationale_326"
+    ],
+    "51": [
+      "routers_documents_download_document",
+      "routers_documents_rationale_286"
+    ],
+    "52": [
+      "routers_entities_get_entity_at_time",
+      "routers_entities_rationale_64"
+    ],
+    "53": [
+      "routers_graph_assign_communities",
+      "routers_graph_rationale_113"
+    ],
+    "54": [
+      "routers_ontology_get_ontology_stats",
+      "routers_ontology_rationale_57"
+    ],
+    "55": [
+      "routers_graph_export_graph",
+      "routers_graph_rationale_154"
+    ],
+    "56": [
+      "routers_memory_delete_conversation",
+      "routers_memory_rationale_93"
+    ],
+    "57": [
+      "routers_entities_deduplicate_entities",
+      "routers_entities_rationale_22"
+    ],
+    "58": [
+      "routers_graph_list_communities",
+      "routers_graph_rationale_130"
+    ],
+    "59": [
+      "routers_documents_rationale_23",
+      "routers_documents_upload_document"
+    ],
+    "60": [
+      "core_abstractions_rationale_16"
+    ],
+    "61": [
+      "core_abstractions_rationale_21"
+    ],
+    "62": [
+      "core_abstractions_rationale_26"
+    ],
+    "63": [
+      "core_abstractions_rationale_39"
+    ],
+    "64": [
+      "core_abstractions_rationale_52"
+    ],
+    "65": [
+      "core_abstractions_rationale_66"
+    ],
+    "66": [
+      "core_abstractions_rationale_81"
+    ],
+    "67": [
+      "core_abstractions_rationale_95"
+    ],
+    "68": [
+      "core_abstractions_rationale_118"
+    ],
+    "69": [
+      "core_abstractions_rationale_128"
+    ],
+    "70": [
+      "core_abstractions_rationale_148"
+    ],
+    "71": [
+      "core_abstractions_rationale_163"
+    ],
+    "72": [
+      "core_abstractions_rationale_183"
+    ],
+    "73": [
+      "core_abstractions_rationale_204"
+    ],
+    "74": [
+      "core_abstractions_rationale_253"
+    ],
+    "75": [
+      "core_abstractions_rationale_267"
+    ],
+    "76": [
+      "core_llm_factory_rationale_276"
+    ],
+    "77": [
+      "core_llm_factory_rationale_290"
+    ],
+    "78": [
+      "services_ontology_drift_detector_rationale_343"
+    ]
+  },
+  "cohesion": {
+    "0": 0.08,
+    "1": 0.11,
+    "2": 0.08,
+    "3": 0.09,
+    "4": 0.09,
+    "5": 0.09,
+    "6": 0.08,
+    "7": 0.09,
+    "8": 0.12,
+    "9": 0.13,
+    "10": 0.11,
+    "11": 0.14,
+    "12": 0.12,
+    "13": 0.14,
+    "14": 0.31,
+    "15": 0.15,
+    "16": 0.16,
+    "17": 0.19,
+    "18": 0.19,
+    "19": 0.17,
+    "20": 0.2,
+    "21": 0.22,
+    "22": 0.27,
+    "23": 0.22,
+    "24": 0.22,
+    "25": 0.28,
+    "26": 0.22,
+    "27": 0.46,
+    "28": 0.25,
+    "29": 0.29,
+    "30": 0.29,
+    "31": 0.29,
+    "32": 0.33,
+    "33": 0.33,
+    "34": 0.4,
+    "35": 0.4,
+    "36": 0.4,
+    "37": 0.4,
+    "38": 0.5,
+    "39": 1.0,
+    "40": 1.0,
+    "41": 1.0,
+    "42": 1.0,
+    "43": 1.0,
+    "44": 1.0,
+    "45": 1.0,
+    "46": 1.0,
+    "47": 1.0,
+    "48": 1.0,
+    "49": 1.0,
+    "50": 1.0,
+    "51": 1.0,
+    "52": 1.0,
+    "53": 1.0,
+    "54": 1.0,
+    "55": 1.0,
+    "56": 1.0,
+    "57": 1.0,
+    "58": 1.0,
+    "59": 1.0,
+    "60": 1.0,
+    "61": 1.0,
+    "62": 1.0,
+    "63": 1.0,
+    "64": 1.0,
+    "65": 1.0,
+    "66": 1.0,
+    "67": 1.0,
+    "68": 1.0,
+    "69": 1.0,
+    "70": 1.0,
+    "71": 1.0,
+    "72": 1.0,
+    "73": 1.0,
+    "74": 1.0,
+    "75": 1.0,
+    "76": 1.0,
+    "77": 1.0,
+    "78": 1.0
+  },
+  "gods": [
+    {
+      "id": "core_llm_factory_unifiedllmprovider",
+      "label": "UnifiedLLMProvider",
+      "degree": 37
+    },
+    {
+      "id": "retrieval_agent_agentretrievalsystem",
+      "label": "AgentRetrievalSystem",
+      "degree": 36
+    },
+    {
+      "id": "core_models_ontologyschema",
+      "label": "OntologySchema",
+      "degree": 26
+    },
+    {
+      "id": "core_models_chunk",
+      "label": "Chunk",
+      "degree": 18
+    },
+    {
+      "id": "ingestion_extractor_knowledgeextractor",
+      "label": "KnowledgeExtractor",
+      "degree": 18
+    },
+    {
+      "id": "routers_report_generate_report",
+      "label": "generate_report()",
+      "degree": 16
+    },
+    {
+      "id": "ingestion_pipeline_ingestionpipeline",
+      "label": "IngestionPipeline",
+      "degree": 16
+    },
+    {
+      "id": "core_entity_resolver_semanticentityresolver",
+      "label": "SemanticEntityResolver",
+      "degree": 14
+    },
+    {
+      "id": "routers_query_query",
+      "label": "query()",
+      "degree": 12
+    },
+    {
+      "id": "retrieval_tools_cyphergenerationtool",
+      "label": "CypherGenerationTool",
+      "degree": 12
+    }
+  ],
+  "surprises": [
+    {
+      "source": "InterviewRequest",
+      "target": "UnifiedLLMProvider",
+      "source_files": [
+        "api/simulation.py",
+        "core/llm_factory.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "deduplicate_entities()",
+      "target": "SemanticEntityResolver",
+      "source_files": [
+        "api/routers/entities.py",
+        "core/entity_resolver.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "evaluate_response()",
+      "target": "RAGEvaluator",
+      "source_files": [
+        "api/routers/evaluation.py",
+        "retrieval/tools.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "generate_report()",
+      "target": "UnifiedLLMProvider",
+      "source_files": [
+        "api/routers/report.py",
+        "core/llm_factory.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "calls",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "KnowledgeExtractor",
+      "target": "SemanticEntityResolver",
+      "source_files": [
+        "ingestion/extractor.py",
+        "core/entity_resolver.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    }
+  ],
+  "tokens": {
+    "input": 0,
+    "output": 0
+  }
+}

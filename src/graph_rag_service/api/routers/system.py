@@ -85,24 +85,27 @@ async def health_check(request: Request, response: Response):
 async def get_system_stats(request: Request, current_user: User = Depends(get_current_user)):
     """Get system statistics"""
     
+    tenant_id = current_user.tenant_id
+    params = {"tenant_id": tenant_id} if tenant_id else {}
+    
     # Count documents
-    doc_query = "MATCH (d:Document) RETURN count(d) as count"
-    doc_result = await request.app.state.graph_store.execute_query(doc_query)
+    doc_query = "MATCH (d:Document {tenant_id: $tenant_id}) RETURN count(d) as count" if tenant_id else "MATCH (d:Document) RETURN count(d) as count"
+    doc_result = await request.app.state.graph_store.execute_query(doc_query, params)
     documents_count = doc_result[0]["count"] if doc_result else 0
     
     # Count entities
-    entity_query = "MATCH (e:Entity) RETURN count(e) as count"
-    entity_result = await request.app.state.graph_store.execute_query(entity_query)
+    entity_query = "MATCH (e:Entity {tenant_id: $tenant_id}) RETURN count(e) as count" if tenant_id else "MATCH (e:Entity) RETURN count(e) as count"
+    entity_result = await request.app.state.graph_store.execute_query(entity_query, params)
     entities_count = entity_result[0]["count"] if entity_result else 0
     
     # Count relationships
-    rel_query = "MATCH ()-[r]->() RETURN count(r) as count"
-    rel_result = await request.app.state.graph_store.execute_query(rel_query)
+    rel_query = "MATCH ()-[r {tenant_id: $tenant_id}]->() RETURN count(r) as count" if tenant_id else "MATCH ()-[r]->() RETURN count(r) as count"
+    rel_result = await request.app.state.graph_store.execute_query(rel_query, params)
     relationships_count = rel_result[0]["count"] if rel_result else 0
     
     # Count chunks
-    chunk_query = "MATCH (c:Chunk) RETURN count(c) as count"
-    chunk_result = await request.app.state.graph_store.execute_query(chunk_query)
+    chunk_query = "MATCH (c:Chunk {tenant_id: $tenant_id}) RETURN count(c) as count" if tenant_id else "MATCH (c:Chunk) RETURN count(c) as count"
+    chunk_result = await request.app.state.graph_store.execute_query(chunk_query, params)
     chunks_count = chunk_result[0]["count"] if chunk_result else 0
     
     ontology = request.app.state.ingestion_pipeline.get_ontology()

@@ -260,6 +260,7 @@ async def update_graph_from_text(
         text=payload.text,
         source_label=payload.source_label or "api_push",
         valid_from=payload.valid_from,
+        tenant_id=current_user.tenant_id,
     )
     return GraphUpdateResponse(
         entities_added=result.entities_added,

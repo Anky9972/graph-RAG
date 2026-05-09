@@ -83,6 +83,10 @@ class UnifiedLLMProvider(LLMProvider):
                 base_url=settings.ollama_base_url,
                 model_name=settings.ollama_embedding_model
             )
+        elif self.provider_name == "mock":
+            # Used for DEMO_MODE fallback in Docker when no API keys are provided
+            self.llm = "mock_llm"
+            self.embedder = "mock_embedder"
         else:
             raise ValueError(f"Unsupported provider: {self.provider_name}")
     
@@ -95,6 +99,9 @@ class UnifiedLLMProvider(LLMProvider):
     ) -> str:
         """Generate completion from prompt with automatic rate-limit retry"""
         
+        if self.provider_name == "mock":
+            return "This is a mock LLM response. Please set GOOGLE_API_KEY for real results."
+            
         messages = []
         if system_prompt:
             messages.append(ChatMessage(role="system", content=system_prompt))
@@ -137,6 +144,28 @@ class UnifiedLLMProvider(LLMProvider):
         Uses JSON mode with schema injection
         """
         
+        if self.provider_name == "mock":
+            # Try to return an empty instance of the model with default values
+            try:
+                # Construct empty dictionary with expected fields based on schema
+                schema = response_model.model_json_schema()
+                mock_data = {}
+                for prop_name, prop_details in schema.get("properties", {}).items():
+                    if prop_details.get("type") == "array":
+                        mock_data[prop_name] = []
+                    elif prop_details.get("type") == "string":
+                        mock_data[prop_name] = "Mock Data"
+                    elif prop_details.get("type") == "integer" or prop_details.get("type") == "number":
+                        mock_data[prop_name] = 0
+                    elif prop_details.get("type") == "boolean":
+                        mock_data[prop_name] = False
+                    else:
+                        mock_data[prop_name] = None
+                return response_model(**mock_data)
+            except Exception:
+                # If that fails, just instantiate with empty args and hope it has defaults
+                return response_model()
+                
         # Create schema-aware prompt
         schema = response_model.model_json_schema()
         enhanced_prompt = f"""
@@ -183,7 +212,10 @@ Only return the JSON object, no additional text.
         """Generate embedding for text"""
         
         embed_provider = settings.embedding_provider
-        
+        if self.provider_name == "mock" or embed_provider == "mock":
+            # Return a generic 768-dim mock vector
+            return [0.01] * 768
+            
         if embed_provider == "gemini":
             embedder = GeminiEmbedding(
                 model_name="models/gemini-embedding-001",
@@ -227,7 +259,9 @@ Only return the JSON object, no additional text.
         """Generate embeddings for multiple texts"""
         
         embed_provider = settings.embedding_provider
-        
+        if self.provider_name == "mock" or embed_provider == "mock":
+            return [[0.01] * 768 for _ in texts]
+            
         if embed_provider == "gemini":
             embedder = GeminiEmbedding(
                 model_name="models/gemini-embedding-001",

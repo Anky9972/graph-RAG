@@ -431,11 +431,8 @@ class CypherGenerationTool:
         self.description = "Generate and execute Cypher queries for complex structured graph queries"
 
     async def run(self, query: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        if tenant_id and tenant_id != settings.default_tenant_id:
-            logger.warning("CypherGenerationTool disabled in multi-tenant environment to prevent data leaks.")
-            return []
-            
-        cypher = await self._generate_cypher(query)
+
+        cypher = await self._generate_cypher(query, tenant_id)
         if not cypher:
             return []
 
@@ -460,7 +457,7 @@ class CypherGenerationTool:
             except Exception:
                 return []
 
-    async def _generate_cypher(self, query: str) -> str:
+    async def _generate_cypher(self, query: str, tenant_id: Optional[str] = None) -> str:
         schema_info = ""
         if self.ontology:
             schema_info = f"""
@@ -468,8 +465,12 @@ Graph Schema:
 - Entity Types: {', '.join(self.ontology.entity_types)}
 - Relationship Types: {', '.join(self.ontology.relationship_types)}
 """
+        tenant_instruction = ""
+        if tenant_id:
+            tenant_instruction = f"7. ALWAYS filter by tenant_id = '{tenant_id}' on MATCHed nodes (e.g., `WHERE n.tenant_id = '{tenant_id}'`)."
+
         prompt = f"""
-You are a Cypher query generator. Generate a Cypher query for Neo4j.
+You are a Cypher query generator. Generate a READ-ONLY Cypher query for Neo4j.
 
 Question: {query}
 {schema_info}
@@ -480,7 +481,8 @@ Rules:
 3. Use WHERE clauses for filtering
 4. Return relevant data with RETURN clause
 5. Add LIMIT 20 to prevent excessive results
-6. Do not use deprecated syntax
+6. DO NOT use CALL, CREATE, MERGE, SET, DELETE, DROP, REMOVE, or LOAD CSV. Read-only queries only.
+{tenant_instruction}
 
 Return only the Cypher query, no explanation.
 """
@@ -500,11 +502,13 @@ Return only the Cypher query, no explanation.
         if not cypher:
             return False
         cypher_upper = cypher.upper()
-        if "MATCH" not in cypher_upper and "CALL" not in cypher_upper:
+        if "MATCH" not in cypher_upper and "RETURN" not in cypher_upper:
             return False
-        dangerous_keywords = ["DELETE", "DETACH DELETE", "DROP", "REMOVE"]
+        dangerous_keywords = ["CALL", "CREATE", "MERGE", "SET", "DELETE", "DROP", "REMOVE", "LOAD CSV"]
         for keyword in dangerous_keywords:
-            if keyword in cypher_upper:
+            # Check for exact word boundaries to prevent matching substring words
+            import re
+            if re.search(r'\b' + keyword + r'\b', cypher_upper):
                 return False
         return True
 
@@ -910,9 +914,10 @@ class EntitySummarySearchTool:
                         conditions_parts.append(f"toLower(e.name) CONTAINS ${p}")
                         params[p] = w.lower()
                     conditions = " OR ".join(conditions_parts)
+                    tenant_filter_fallback = "AND e.tenant_id = $tenant_id" if tenant_id else ""
                     fallback_cypher = f"""
                     MATCH (e:Entity)
-                    WHERE ({conditions}) AND e.summary IS NOT NULL AND e.summary <> ''
+                    WHERE ({conditions}) AND e.summary IS NOT NULL AND e.summary <> '' {tenant_filter_fallback}
                     {type_filter}
                     RETURN e.name as name, e.type as type, e.summary as summary
                     LIMIT $limit

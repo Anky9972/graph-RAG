@@ -390,10 +390,9 @@ class Neo4jStore(GraphStore, VectorStore):
         """
         tenant_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
         query = f"""
-        MATCH (e:Entity)
+        MATCH (e:Entity)-[:IN_COMMUNITY]->(c:Community)
         WHERE e.name IN $names {tenant_filter}
-          AND e.community_id IS NOT NULL
-        RETURN e.community_id as community_id,
+        RETURN c.id as community_id,
                collect({{name: e.name, type: e.type, properties: e.properties}}) as entities
         ORDER BY size(collect(e)) DESC
         LIMIT 10

@@ -68,6 +68,10 @@ echo "Waiting for Neo4j to start..."\n\
 while ! curl -s http://localhost:7474 > /dev/null; do\n\
     sleep 2\n\
 done\n\
+echo "Neo4j HTTP is up! Waiting for Bolt (7687)..."\n\
+while ! (echo > /dev/tcp/localhost/7687) >/dev/null 2>&1; do\n\
+    sleep 2\n\
+done\n\
 echo "Neo4j is up!"\n\
 \n\
 # Set environment variables for Demo Mode\n\
@@ -82,9 +86,13 @@ export ENVIRONMENT=production\n\
 export SECRET_KEY=demo-secret-key-1234567890\n\
 \n\
 if [ -z "$GOOGLE_API_KEY" ]; then\n\
-    export DEFAULT_LLM_PROVIDER=ollama\n\
+    export DEFAULT_LLM_PROVIDER=mock\n\
+    export EMBEDDING_PROVIDER=mock\n\
+    export DEMO_MODE=true\n\
+    echo "[WARNING] GOOGLE_API_KEY is not set. Running in DEMO_MODE with mock LLM provider."\n\
 else\n\
     export DEFAULT_LLM_PROVIDER=gemini\n\
+    export EMBEDDING_PROVIDER=gemini\n\
 fi\n\
 \n\
 # Create default admin user in Neo4j\n\
@@ -107,12 +115,35 @@ async def main():\n\
             '\''tenant_id'\'': '\''demo_tenant'\'',\n\
         })\n\
         print('\''Admin user created in Neo4j'\'')\n\
+        \n\
+        # Check GDS\n\
+        gds_res = await store.execute_query('\''RETURN gds.version() as version'\'')\n\
+        print(f'\''GDS Plugin Version: {gds_res[0]["version"] if gds_res else "NOT FOUND"}'\'')\n\
     except Exception as e:\n\
         print(f'\''Admin user creation note: {e}'\'')\n\
+        raise e\n\
     await store.disconnect()\n\
 \n\
 asyncio.run(main())\n\
 "\n\
+if [ $? -ne 0 ]; then\n\
+    echo "Admin seed failed, retrying in 5 seconds..."\n\
+    sleep 5\n\
+    python -c "\n\
+import asyncio\n\
+from src.graph_rag_service.core.neo4j_store import Neo4jStore\n\
+from src.graph_rag_service.api.auth import get_password_hash\n\
+\n\
+async def main():\n\
+    store = Neo4jStore()\n\
+    await store.connect()\n\
+    try:\n\
+        await store.create_user({'username': 'admin', 'hashed_password': get_password_hash('admin'), 'scopes': ['read', 'write', 'admin'], 'tenant_id': 'demo_tenant'})\n\
+    except Exception as e: pass\n\
+    await store.disconnect()\n\
+asyncio.run(main())\n\
+    "\n\
+fi\n\
 \n\
 # Start FastAPI and serve static files (frontend)\n\
 uvicorn src.graph_rag_service.api.server:app --host 0.0.0.0 --port 7860\n\

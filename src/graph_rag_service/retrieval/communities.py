@@ -117,7 +117,12 @@ class CommunityBuilder:
         query = f"""
         MATCH (n:Entity)
         WHERE {tenant_filter} n.leiden_community IS NOT NULL
-        WITH n, n.leiden_community AS comms
+        // Normalize comms to always be a list. If it's a scalar, make it a single-element list.
+        WITH n, 
+             CASE 
+               WHEN type(n.leiden_community) CONTAINS "LIST" THEN n.leiden_community 
+               ELSE [n.leiden_community] 
+             END AS comms
         
         MERGE (c0:Community {{id: "0:" + toString(comms[0])}})
         SET c0.level = 0, c0.tenant_id = $tenant_id
@@ -136,7 +141,7 @@ class CommunityBuilder:
         await self.store.execute_query(query, {"tenant_id": tenant_id})
         logger.info(f"Community nodes and IN_COMMUNITY relationships created for tenant {tenant_id}")
 
-    async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[str]:
+    async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Collects chunks related to the entities in a community.
         """
@@ -155,7 +160,7 @@ class CommunityBuilder:
             "tenant_id": tenant_id
         })
         
-        return [f"Chunk {r.get('chunk_id')}: {r.get('text')}" for r in results]
+        return [{"chunk_id": r.get('chunk_id'), "text": r.get('text'), "document_id": r.get('document_id')} for r in results]
 
     async def generate_report(self, community_id: str, tenant_id: Optional[str] = None) -> Optional[CommunityReport]:
         """
@@ -180,6 +185,7 @@ class CommunityBuilder:
             
         evidence = await self.collect_evidence(community_id, tenant_id)
         
+        evidence_texts = [f"Chunk {e['chunk_id']}: {e['text']}" for e in evidence[:10]]
         prompt = f"""
         You are an expert analyst generating a Community Report for a knowledge graph.
         
@@ -187,18 +193,24 @@ class CommunityBuilder:
         {", ".join(entities[:20])}
         
         Evidence chunks:
-        {"\n---\n".join(evidence[:10])}
+        {"\n---\n".join(evidence_texts)}
         
         Please provide a report with:
         - A concise, descriptive title
         - A summary of what this community represents
-        - 3-5 key findings or themes
+        - 3-5 key findings or themes, with chunk_id citations and confidence scores.
         
         Output as JSON matching this schema:
         {{
             "title": "Community Title",
             "summary": "Detailed summary...",
-            "findings": ["Finding 1", "Finding 2", ...]
+            "findings": [
+              {{
+                "text": "Finding description...",
+                "supporting_chunk_ids": ["chunk_id_1", "chunk_id_2"],
+                "confidence": 0.85
+              }}
+            ]
         }}
         """
         
@@ -222,20 +234,29 @@ class CommunityBuilder:
                 tenant_id=tenant_id
             )
             
+            # Extract ALL chunk IDs used in findings
+            used_chunk_ids = []
+            for f in report.findings:
+                if isinstance(f, dict) and "supporting_chunk_ids" in f:
+                    used_chunk_ids.extend(f["supporting_chunk_ids"])
+            used_chunk_ids = list(set(used_chunk_ids))
+
             # Store report in graph
             await self.store.execute_query(f"""
                 MATCH (c:Community {{id: $community_id}})
                 {f"WHERE c.tenant_id = $tenant_id" if tenant_id else ""}
                 SET c.title = $title,
                     c.summary = $summary,
-                    c.findings = $findings,
+                    c.report_json = $report_json,
+                    c.evidence_chunk_ids = $evidence_chunk_ids,
                     c.report_generated = true
             """, {
                 "community_id": community_id,
                 "tenant_id": tenant_id,
                 "title": report.title,
                 "summary": report.summary,
-                "findings": report.findings
+                "report_json": json.dumps(data),
+                "evidence_chunk_ids": used_chunk_ids
             })
             
             # Embed report for global community search

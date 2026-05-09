@@ -4,6 +4,36 @@ import time
 import httpx
 from typing import List, Dict, Any
 from pydantic import BaseModel
+import re
+import string
+
+def normalize_answer(s):
+    """Lower text and remove punctuation, articles and extra whitespace."""
+    def remove_articles(text):
+        return re.sub(r'\b(a|an|the)\b', ' ', text)
+    def white_space_fix(text):
+        return ' '.join(text.split())
+    def remove_punc(text):
+        exclude = set(string.punctuation)
+        return ''.join(ch for ch in text if ch not in exclude)
+    def lower(text):
+        return text.lower()
+    return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+def exact_match(prediction, ground_truth):
+    return normalize_answer(prediction) == normalize_answer(ground_truth)
+
+def token_f1(prediction, ground_truth):
+    prediction_tokens = normalize_answer(prediction).split()
+    ground_truth_tokens = normalize_answer(ground_truth).split()
+    common = set(prediction_tokens) & set(ground_truth_tokens)
+    num_same = len(common)
+    if num_same == 0:
+        return 0.0
+    precision = 1.0 * num_same / len(prediction_tokens)
+    recall = 1.0 * num_same / len(ground_truth_tokens)
+    f1 = (2 * precision * recall) / (precision + recall)
+    return f1
 
 # Mock datasets for benchmarking fallback
 HOTPOT_QA_SAMPLE = [
@@ -68,6 +98,36 @@ def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
         print(f"Failed to load dataset from HF: {e}. Falling back to mock dataset.")
         return HOTPOT_QA_SAMPLE
 
+async def create_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
+    timestamp = int(time.time())
+    username = f"benchmark_user_{timestamp}"
+    tenant_id = f"benchmark_run_{timestamp}"
+    password = "password123"
+    
+    register_url = f"{config.base_url}/api/auth/register"
+    payload = {
+        "username": username,
+        "password": password,
+        "email": f"{username}@example.com",
+        "full_name": "Benchmark User",
+        "scopes": ["read", "write"],
+        "tenant_id": tenant_id
+    }
+    
+    try:
+        res = await client.post(register_url, json=payload, timeout=10.0)
+        res.raise_for_status()
+        
+        login_url = f"{config.base_url}/api/auth/login"
+        login_payload = {"username": username, "password": password}
+        login_res = await client.post(login_url, json=login_payload, timeout=10.0)
+        login_res.raise_for_status()
+        print(f"  Created isolated tenant: {tenant_id}")
+        return login_res.json()["access_token"]
+    except Exception as e:
+        print(f"  Failed to create isolated tenant: {e}. Falling back to default admin.")
+        return await authenticate(client, config)
+
 async def authenticate(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
     login_url = f"{config.base_url}/api/auth/login"
     try:
@@ -115,13 +175,17 @@ async def evaluate_question(client: httpx.AsyncClient, config: BenchmarkConfig, 
         duration = time.time() - start_time
         answer = data.get("answer", "")
         
-        is_correct = q["ground_truth"].lower() in answer.lower()
+        em = exact_match(answer, q["ground_truth"])
+        f1 = token_f1(answer, q["ground_truth"])
+        is_correct = em or f1 > 0.6  # Use relaxed F1 threshold for general correctness flag
         
         return {
             "question": q["question"],
             "mode": mode,
             "duration": duration,
             "is_correct": is_correct,
+            "exact_match": em,
+            "f1_score": f1,
             "generated_answer": answer,
             "confidence": data.get("confidence", 0.0),
             "sources_count": len(data.get("sources", []))
@@ -146,8 +210,9 @@ async def run_benchmark():
     
     async with httpx.AsyncClient() as client:
         # Authenticate first
-        print("\nAuthenticating with backend...")
-        token = await authenticate(client, config)
+        # Create isolated tenant for benchmark
+        print("\nCreating isolated benchmark tenant...")
+        token = await create_benchmark_tenant(client, config)
         
         for i, q in enumerate(dataset):
             print(f"\nEvaluating Question {i+1}/{len(dataset)}: {q['question']}")

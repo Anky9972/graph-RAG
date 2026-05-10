@@ -89,8 +89,8 @@ class CommunityBuilder:
                     includeIntermediateCommunities: true
                 }
             )
-            YIELD createMillis, computeMillis, writeMillis, nodePropertiesWritten, modularity, modularities
-            RETURN createMillis, computeMillis, writeMillis, nodePropertiesWritten, modularity, modularities
+            YIELD nodePropertiesWritten, modularity
+            RETURN nodePropertiesWritten, modularity
             """
             
             result = await self.store.execute_query(leiden_query, {"graph_name": graph_name})

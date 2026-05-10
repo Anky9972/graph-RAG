@@ -119,7 +119,7 @@ async def main():\n\
         \n\
         # Check GDS\n\
         gds_res = await store.execute_query('\''RETURN gds.version() as version'\'')\n\
-        print(f'\''GDS Plugin Version: {gds_res[0]["version"] if gds_res else "NOT FOUND"}'\'')\n\
+        print('\''GDS Plugin Version:'\'', gds_res[0]["version"] if gds_res else '\''NOT FOUND'\'')\n\
     except Exception as e:\n\
         print(f'\''Admin user creation note: {e}'\'')\n\
         raise e\n\

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/0"
 
     # LLM Configuration
-    default_llm_provider: str = "ollama"  # ollama, openai, anthropic, gemini
+    default_llm_provider: str = "ollama"  # ollama, openai, anthropic, gemini, huggingface
 
     # OpenAI
     openai_api_key: Optional[str] = None
@@ -78,8 +78,13 @@ class Settings(BaseSettings):
     ollama_model: str = "deepseek-v3.1:671b-cloud"
     ollama_embedding_model: str = "nomic-embed-text"
 
+    # Hugging Face
+    huggingface_api_key: Optional[str] = None
+    huggingface_model: str = "meta-llama/Meta-Llama-3-8B-Instruct"
+    huggingface_embedding_model: str = "BAAI/bge-large-en-v1.5"
+
     # Embedding Configuration
-    embedding_provider: str = "ollama"  # ollama, openai
+    embedding_provider: str = "ollama"  # ollama, openai, huggingface
     embedding_dimension: int = 768  # nomic-embed-text dimension
 
     # Ingestion Configuration
@@ -201,6 +206,10 @@ class Settings(BaseSettings):
             "gemini": {
                 "api_key": self.google_api_key,
                 "model": self.gemini_model,
+            },
+            "huggingface": {
+                "api_key": self.huggingface_api_key,
+                "model": self.huggingface_model,
             },
             "ollama": {
                 "base_url": self.ollama_base_url,

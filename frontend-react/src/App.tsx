@@ -10,6 +10,7 @@ import SimulationRunView from './views/SimulationRunView';
 import Ontology from './views/Ontology';
 import InsightsView from './views/InsightsView';
 import AdminDashboard from './views/AdminDashboard';
+import SettingsView from './views/SettingsView';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
@@ -30,6 +31,7 @@ const Navigation: React.FC = () => {
         <NavLink to="/interact" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>INTERACT</NavLink>
         <NavLink to="/simulate" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>SIMULATE</NavLink>
         <NavLink to="/insights" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>INSIGHTS</NavLink>
+        <NavLink to="/settings" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>SETTINGS</NavLink>
         {user?.scopes?.includes('admin') && (
           <NavLink to="/admin" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>ADMIN</NavLink>
         )}
@@ -169,6 +171,7 @@ function App() {
           <Route path="/interact" element={<ProtectedRoute><Layout><InteractionView /></Layout></ProtectedRoute>} />
           <Route path="/simulate" element={<ProtectedRoute><Layout><SimulationRunView /></Layout></ProtectedRoute>} />
           <Route path="/insights" element={<ProtectedRoute><Layout><InsightsView /></Layout></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Layout><SettingsView /></Layout></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><Layout><AdminDashboard /></Layout></ProtectedRoute>} />
         </Routes>
       </BrowserRouter>

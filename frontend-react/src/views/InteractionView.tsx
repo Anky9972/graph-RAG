@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { Message, Conversation, DocumentInfo, GraphNode } from '../types/api';
 import {
-  MessageSquare, Send, Bot, User as UserIcon, Zap,
+  MessageSquare, Send, Bot, User as UserIcon,
   Menu, Info, X, ChevronDown, FileText, Plus
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';

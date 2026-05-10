@@ -51,6 +51,8 @@ dependencies = [
     "markdownify>=1.2.2",
     "flower>=2.0.1",
     "bcrypt>=4.0.0",            # used directly in auth.py (not via passlib)
+    "llama-index-llms-huggingface-api>=0.7.0",
+    "llama-index-embeddings-huggingface>=0.7.0",
 ]
 
 [project.optional-dependencies]

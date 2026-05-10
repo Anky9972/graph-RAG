@@ -14,7 +14,9 @@ from llama_index.llms.openai import OpenAI
 from llama_index.llms.anthropic import Anthropic
 from llama_index.llms.gemini import Gemini
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 try:
     from llama_index.embeddings.gemini import GeminiEmbedding
 except ImportError:
@@ -68,6 +70,15 @@ class UnifiedLLMProvider(LLMProvider):
                 api_key=settings.google_api_key,
                 model=self.model_name or settings.gemini_model,
                 temperature=0.7
+            )
+            
+        elif self.provider_name == "huggingface":
+            self.llm = HuggingFaceInferenceAPI(
+                model_name=self.model_name or settings.huggingface_model,
+                token=settings.huggingface_api_key,
+                temperature=0.7,
+                context_window=4096,
+                max_new_tokens=1024
             )
             
         elif self.provider_name == "ollama":
@@ -289,6 +300,17 @@ Only return the JSON object, no additional text.
                 model="text-embedding-3-large"
             )
             return response.data[0].embedding
+            
+        elif embed_provider == "huggingface":
+            if not self.embedder:
+                self.embedder = HuggingFaceEmbedding(
+                    model_name=settings.huggingface_embedding_model
+                )
+            # HuggingFaceEmbedding usually has get_text_embedding or aget_text_embedding
+            try:
+                return await self.embedder.aget_text_embedding(text)
+            except AttributeError:
+                return self.embedder.get_text_embedding(text)
         else:
             raise ValueError(f"Unsupported embedding provider: {embed_provider}")
     
@@ -342,6 +364,16 @@ Only return the JSON object, no additional text.
                 model="text-embedding-3-large"
             )
             return [item.embedding for item in response.data]
+            
+        elif embed_provider == "huggingface":
+            if not self.embedder:
+                self.embedder = HuggingFaceEmbedding(
+                    model_name=settings.huggingface_embedding_model
+                )
+            try:
+                return await self.embedder.aget_text_embedding_batch(texts)
+            except AttributeError:
+                return self.embedder.get_text_embedding_batch(texts)
         else:
             raise ValueError(f"Unsupported embedding provider: {embed_provider}")
 

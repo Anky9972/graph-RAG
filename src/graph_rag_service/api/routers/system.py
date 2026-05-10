@@ -14,6 +14,25 @@ from ...api.models import *
 from ...api.auth import get_current_user, User
 import redis
 from ..dependencies import get_graph_store, get_retrieval_agent, get_ingestion_pipeline, get_redis_client
+from pydantic import BaseModel
+from pathlib import Path
+import httpx
+
+class SettingsUpdateRequest(BaseModel):
+    default_llm_provider: Optional[str] = None
+    embedding_provider: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    openai_model: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: Optional[str] = None
+    google_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
+    ollama_base_url: Optional[str] = None
+    ollama_model: Optional[str] = None
+    ollama_embedding_model: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
+    huggingface_model: Optional[str] = None
+    huggingface_embedding_model: Optional[str] = None
 
 router = APIRouter()
 
@@ -176,6 +195,129 @@ async def get_supported_formats(request: Request):
         }
     )
 
+
+# ── Settings Endpoint ────────────────────────────────────────────────────────
+
+@router.get("/api/system/settings", tags=["System"])
+async def get_settings(current_user: User = Depends(get_current_user)):
+    """Get current global settings"""
+    return {
+        "default_llm_provider": settings.default_llm_provider,
+        "embedding_provider": settings.embedding_provider,
+        "openai_api_key": settings.openai_api_key,
+        "openai_model": settings.openai_model,
+        "anthropic_api_key": settings.anthropic_api_key,
+        "anthropic_model": settings.anthropic_model,
+        "google_api_key": settings.google_api_key,
+        "gemini_model": settings.gemini_model,
+        "ollama_base_url": settings.ollama_base_url,
+        "ollama_model": settings.ollama_model,
+        "ollama_embedding_model": settings.ollama_embedding_model,
+        "huggingface_api_key": getattr(settings, 'huggingface_api_key', None),
+        "huggingface_model": getattr(settings, 'huggingface_model', None),
+        "huggingface_embedding_model": getattr(settings, 'huggingface_embedding_model', None),
+    }
+
+@router.post("/api/system/settings", tags=["System"])
+async def update_settings(update_req: SettingsUpdateRequest, current_user: User = Depends(get_current_user)):
+    """Update global settings dynamically and persist to .env"""
+    update_data = update_req.model_dump(exclude_unset=True)
+    
+    # Update in memory
+    for key, value in update_data.items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+            
+    # Persist to .env
+    env_path = Path(".env")
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+            
+        new_lines = []
+        updated_keys = set()
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+                
+            if "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k.lower() in update_data:
+                    new_val = update_data[k.lower()]
+                    if new_val is not None:
+                        new_lines.append(f"{k.upper()}={new_val}\n")
+                    else:
+                        new_lines.append(f"{k.upper()}=\n")
+                    updated_keys.add(k.lower())
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+                
+        # Append keys that were not in .env before
+        for k, v in update_data.items():
+            if k not in updated_keys and v is not None:
+                new_lines.append(f"{k.upper()}={v}\n")
+                
+        with open(env_path, "w") as f:
+            f.writelines(new_lines)
+    else:
+        # If .env does not exist, create it and write all the updated data
+        new_lines = []
+        for k, v in update_data.items():
+            if v is not None:
+                new_lines.append(f"{k.upper()}={v}\n")
+        with open(env_path, "w") as f:
+            f.writelines(new_lines)
+            
+    return {"message": "Settings updated successfully"}
+
+@router.get("/api/system/ollama/models", tags=["System"])
+async def get_ollama_models(base_url: str = Query(..., description="Ollama Base URL")):
+    """Fetch available models from an Ollama instance"""
+    models = []
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{base_url.rstrip('/')}/api/tags", timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m["name"] for m in data.get("models", [])]
+    except Exception as e:
+        logger.error(f"Failed to fetch Ollama models: {e}")
+        
+    # Popular cloud models for suggestion
+    popular = ["llama3:8b", "llama3.1:8b", "mistral:7b", "gemma:7b", "phi3:mini", "deepseek-coder:6.7b", "nomic-embed-text"]
+    for p in popular:
+        if p not in models:
+            models.append(p)
+            
+    return {"models": models}
+
+@router.get("/api/system/huggingface/models", tags=["System"])
+async def get_hf_models():
+    """Fetch trending HuggingFace models"""
+    models = [
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "mistralai/Mistral-7B-Instruct-v0.2",
+        "google/gemma-7b-it",
+        "BAAI/bge-large-en-v1.5",
+        "sentence-transformers/all-MiniLM-L6-v2"
+    ]
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get("https://huggingface.co/api/models?sort=trending&limit=30", timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                for m in data:
+                    if m.get("id") and m.get("id") not in models:
+                        models.append(m["id"])
+    except Exception as e:
+        logger.error(f"Failed to fetch HuggingFace models: {e}")
+        
+    return {"models": models}
 
 # ── Graph Export Endpoint ─────────────────────────────────────────────────────
 

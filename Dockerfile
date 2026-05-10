@@ -146,6 +146,9 @@ asyncio.run(main())\n\
     "\n\
 fi\n\
 \n\
+# Start Celery worker in the background\n\
+celery -A src.graph_rag_service.workers.celery_worker worker --loglevel=info --concurrency=1 --pool=threads &\n\
+\n\
 # Start FastAPI and serve static files (frontend)\n\
 uvicorn src.graph_rag_service.api.server:app --host 0.0.0.0 --port 7860\n\
 ' > start.sh && chmod +x start.sh

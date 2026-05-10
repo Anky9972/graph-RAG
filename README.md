@@ -13,6 +13,8 @@ license: mit
 
 > **CORTEX** is a production-grade, agentic Knowledge Graph platform that transforms unstructured documents and web content into an intelligent, queryable knowledge graph — with a full-featured React UI, streaming AI chat, real-time graph visualization, simulation personas, and deep ontology governance.
 
+**🌐 Live Demo:** [https://webcortex.netlify.app](https://webcortex.netlify.app)
+
 ---
 
 ## ✨ What's Been Built

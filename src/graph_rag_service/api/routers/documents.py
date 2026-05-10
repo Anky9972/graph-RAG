@@ -61,8 +61,9 @@ async def upload_document(request: Request,
 
     # SECURITY: sanitize filename to prevent path traversal (e.g. "../../../etc/passwd")
     import re as _re
+    import uuid
     safe_stem = _re.sub(r"[^\w\-]", "_", Path(file.filename).stem)[:100]
-    safe_name = f"{safe_stem}{file_extension}"
+    safe_name = f"{current_user.tenant_id}_{uuid.uuid4().hex[:8]}_{safe_stem}{file_extension}"
     file_path = settings.upload_dir / safe_name
     # Ensure the resolved path is still inside upload_dir
     try:
@@ -97,7 +98,8 @@ async def upload_document(request: Request,
     task = ingest_document_task.delay(
         str(file_path),
         ontology_dict=None,
-        tenant_id=current_user.tenant_id
+        tenant_id=current_user.tenant_id,
+        document_id=doc_id
     )
     
     return DocumentUploadResponse(
@@ -107,6 +109,7 @@ async def upload_document(request: Request,
         task_id=task.id,
         message="Document uploaded successfully. Ingestion in progress."
     )
+
 
 
 
@@ -143,7 +146,10 @@ async def scrape_url(
             title = "scraped_page"
             
         safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)
-        filename = f"{safe_title}.md"
+        import uuid
+        import hashlib
+        doc_id = hashlib.md5(f"{current_user.tenant_id}_{request.url}".encode()).hexdigest()[:16]
+        filename = f"{current_user.tenant_id}_{uuid.uuid4().hex[:8]}_{safe_title}.md"
         
         # Save to disk
         file_path = settings.upload_dir / filename
@@ -153,17 +159,13 @@ async def scrape_url(
             await buffer.write(text)
             
         file_size = file_path.stat().st_size
-        import hashlib
-        hasher = hashlib.sha256()
-        hasher.update(str(file_path).encode())
-        hasher.update(str(file_path.stat().st_mtime).encode())
-        doc_id = hasher.hexdigest()[:16]
         
         # Queue ingestion
         task = ingest_document_task.delay(
             str(file_path),
             ontology_dict=None,
-            tenant_id=current_user.tenant_id
+            tenant_id=current_user.tenant_id,
+            document_id=doc_id
         )
         
         return DocumentUploadResponse(
@@ -201,6 +203,7 @@ async def crawl_urls(
     async def run_crawl_and_ingest():
         try:
             results = await crawler.crawl(request.url)
+            import uuid
             for page in results:
                 if not page.get("markdown"):
                     continue
@@ -208,15 +211,26 @@ async def crawl_urls(
                 # Create a safe filename
                 safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', page.get("title", "page_") or "page_")
                 url_hash = hashlib.md5(page['url'].encode()).hexdigest()[:6]
-                filename = f"crawled_{safe_title}_{url_hash}.txt"
+                filename = f"{current_user.tenant_id}_{uuid.uuid4().hex[:8]}_{safe_title}_{url_hash}.txt"
+                
+                doc_id = hashlib.md5(f"{current_user.tenant_id}_{page['url']}".encode()).hexdigest()[:16]
                 
                 file_content = f"# Source Metadata\n- URL: {page['url']}\n- Title: {page['title']}\n\n"
                 file_content += page["markdown"]
                 
                 storage.save_file(filename, file_content.encode("utf-8"))
+                
+                # We need to construct the absolute path because the worker expects a full path or path relative to upload_dir
+                # Wait, storage.save_file saves it to upload_dir. The other endpoints pass str(settings.upload_dir / filename)
+                file_path = settings.upload_dir / filename
                     
                 # Queue parsing
-                ingest_document_task.delay(filename, ontology_dict=None)
+                ingest_document_task.delay(
+                    str(file_path),
+                    ontology_dict=None,
+                    tenant_id=current_user.tenant_id,
+                    document_id=doc_id
+                )
                 
         except Exception as e:
             import logging

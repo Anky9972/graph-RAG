@@ -149,7 +149,7 @@ class GraphNode(BaseModel):
     type: str
     description: Optional[str] = None
     properties: Dict[str, Any] = {}
-    community_id: Optional[int] = None   # Gap #2
+    community_id: Optional[str] = None   # Gap #2
     valid_from: Optional[str] = None     # Gap #5
     valid_until: Optional[str] = None    # Gap #5
 
@@ -266,7 +266,7 @@ class CommunityAssignResponse(BaseModel):
 
 class CommunitySummaryResponse(BaseModel):
     """Summary of a graph community"""
-    community_id: int
+    community_id: str
     entity_count: int
     entities: List[str]
     summary: str

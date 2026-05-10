@@ -112,23 +112,34 @@ async def get_graph_visualization(request: Request,
 
 
 @router.post("/api/graph/communities/assign", response_model=CommunityAssignResponse, tags=["Graph"])
-async def assign_communities(request: Request, 
+async def assign_communities(request: Request,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user)
 ):
     """
     Detect and assign community IDs using Hierarchical Leiden clustering.
     Run this after ingesting new documents to update community clustering.
+    Runs as a background task to prevent API timeouts.
     """
     from ...retrieval.communities import CommunityBuilder
-    builder = CommunityBuilder(request.app.state.graph_store, request.app.state.retrieval_agent.llm)
-    stats = await builder.run_leiden(current_user.tenant_id)
-    await builder.create_community_nodes(current_user.tenant_id)
-    reports = await builder.generate_all_reports(current_user.tenant_id)
     
-    count = len(reports)
+    async def build_communities_task():
+        try:
+            builder = CommunityBuilder(request.app.state.graph_store, request.app.state.retrieval_agent.llm)
+            await builder.run_leiden(current_user.tenant_id)
+            await builder.create_community_nodes(current_user.tenant_id)
+            await builder.generate_all_reports(current_user.tenant_id)
+            import logging
+            logging.getLogger(__name__).info(f"Community indexing completed for tenant {current_user.tenant_id}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Community indexing failed for tenant {current_user.tenant_id}: {e}")
+
+    background_tasks.add_task(build_communities_task)
+    
     return CommunityAssignResponse(
-        communities_found=count,
-        message=f"Generated {count} community reports. Community search is now active."
+        communities_found=-1, # Unknown at start time
+        message="Community indexing started in the background. Reports will be available once complete."
     )
 
 
@@ -305,10 +316,10 @@ async def purge_tenant_data(
             detail="You may only purge your own tenant. Admin scope is required to purge other tenants."
         )
 
-    # Hard-delete all nodes scoped to this tenant
+    # Hard-delete all nodes scoped to this tenant, EXCEPT User nodes
     query = """
     CALL apoc.periodic.iterate(
-      'MATCH (n {tenant_id: $tid}) RETURN n',
+      'MATCH (n {tenant_id: $tid}) WHERE NOT n:User RETURN n',
       'DETACH DELETE n',
       {batchSize: 500, params: {tid: $tid}}
     )
@@ -320,7 +331,7 @@ async def purge_tenant_data(
         deleted = result[0].get("total", 0) if result else 0
     except Exception:
         # Fall back to simple DETACH DELETE if APOC not available
-        fallback = "MATCH (n {tenant_id: $tid}) DETACH DELETE n"
+        fallback = "MATCH (n {tenant_id: $tid}) WHERE NOT n:User DETACH DELETE n"
         await request.app.state.graph_store.execute_query(fallback, {"tid": target_tenant_id})
         deleted = -1  # Unknown
 

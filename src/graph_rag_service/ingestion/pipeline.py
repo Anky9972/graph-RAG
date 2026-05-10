@@ -54,7 +54,8 @@ class IngestionPipeline:
         ontology: Optional[OntologySchema] = None,
         store_results: bool = True,
         progress_callback=None,
-        tenant_id: Optional[str] = None
+        tenant_id: Optional[str] = None,
+        document_id: Optional[str] = None
     ) -> ExtractionResult:
         """
         Ingest a single document through the full pipeline
@@ -70,7 +71,7 @@ class IngestionPipeline:
         
         # Step 1: Process document
         logger.info(f"Processing document: {file_path.name}")
-        document = await self.document_processor.process_document(file_path)
+        document = await self.document_processor.process_document(file_path, document_id=document_id)
         chunks = await self.document_processor.chunk_document(document)
         
         if not chunks:

@@ -58,7 +58,7 @@ class DocumentProcessor:
                 logger.info(f"Warning: Failed to initialize LlamaParse: {e}")
                 self.llama_parser = None
 
-    async def process_document(self, file_path: Path) -> Document:
+    async def process_document(self, file_path: Path, document_id: Optional[str] = None) -> Document:
         """
         Process a document and extract metadata
 
@@ -71,7 +71,7 @@ class DocumentProcessor:
         text = await self._extract_text(file_path)
 
         document = Document(
-            id=self._generate_document_id(file_path),
+            id=document_id or self._generate_document_id(file_path),
             filename=file_path.name,
             file_type=file_path.suffix,
             size_bytes=file_path.stat().st_size,

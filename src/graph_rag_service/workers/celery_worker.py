@@ -77,7 +77,7 @@ def run_async(coro):
 
 
 @celery_app.task(name='ingest_document', bind=True)
-def ingest_document_task(self, file_path: str, ontology_dict: dict = None, tenant_id: str = None):
+def ingest_document_task(self, file_path: str, ontology_dict: dict = None, tenant_id: str = None, document_id: str = None):
     """
     Celery task for document ingestion
 
@@ -122,7 +122,8 @@ def ingest_document_task(self, file_path: str, ontology_dict: dict = None, tenan
                     temp_path,
                     ontology=ontology,
                     progress_callback=progress_cb,
-                    tenant_id=tenant_id
+                    tenant_id=tenant_id,
+                    document_id=document_id
                 )
             
             # Convert result to dict

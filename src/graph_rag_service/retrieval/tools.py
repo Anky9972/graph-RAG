@@ -463,6 +463,9 @@ class CypherGenerationTool:
         except Exception as e:
             logger.info(f"Cypher execution error: {e}")
             cypher = await self._correct_cypher_with_error(cypher, query, str(e))
+            if not self._validate_cypher(cypher) or not self._tenant_safe(cypher, tenant_id):
+                logger.warning("Corrected Cypher query rejected: failed safety check.")
+                return []
             try:
                 results = await self.store.execute_query(cypher)
                 for r in results:

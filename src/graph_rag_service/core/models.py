@@ -46,7 +46,7 @@ class Entity(BaseModel):
     # Tenant support (Gap #7)
     tenant_id: Optional[str] = None
     # Community support (Gap #2)
-    community_id: Optional[int] = None
+    community_id: Optional[str] = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -197,7 +197,7 @@ class EvalResult(BaseModel):
 
 class CommunityReport(BaseModel):
     """Community summary for LazyGraphRAG (Gap #2)"""
-    community_id: int
+    community_id: str
     entity_count: int
     entities: List[str]
     summary: str

@@ -162,6 +162,23 @@ class UnifiedLLMProvider(LLMProvider):
         """
         
         if self.provider_name == "mock":
+            # For extraction tasks, return a realistic small mock graph
+            if response_model.__name__ == "ExtractionResult":
+                from ..ingestion.pipeline import ExtractionResult
+                from .models import Entity, Relationship
+                import uuid
+                return ExtractionResult(
+                    entities=[
+                        Entity(id=uuid.uuid4().hex[:8], name="Project Apollo", type="Project", properties={"status": "Active"}),
+                        Entity(id=uuid.uuid4().hex[:8], name="Alice Smith", type="Person", properties={"role": "Lead"}),
+                        Entity(id=uuid.uuid4().hex[:8], name="Data Science Dept", type="Organization", properties={"location": "HQ"})
+                    ],
+                    relationships=[
+                        Relationship(source="Alice Smith", target="Project Apollo", type="LEADS", confidence=0.9, properties={"since": "2023"}),
+                        Relationship(source="Alice Smith", target="Data Science Dept", type="WORKS_FOR", confidence=1.0, properties={})
+                    ]
+                )
+                
             # Try to return an empty instance of the model with default values
             try:
                 # Construct empty dictionary with expected fields based on schema
@@ -171,11 +188,11 @@ class UnifiedLLMProvider(LLMProvider):
                     if prop_details.get("type") == "array":
                         mock_data[prop_name] = []
                     elif prop_details.get("type") == "string":
-                        mock_data[prop_name] = "Mock Data"
-                    elif prop_details.get("type") == "integer" or prop_details.get("type") == "number":
-                        mock_data[prop_name] = 0
+                        mock_data[prop_name] = f"Mock {prop_name}"
+                    elif prop_details.get("type") in ["integer", "number"]:
+                        mock_data[prop_name] = 1
                     elif prop_details.get("type") == "boolean":
-                        mock_data[prop_name] = False
+                        mock_data[prop_name] = True
                     else:
                         mock_data[prop_name] = None
                 return response_model(**mock_data)

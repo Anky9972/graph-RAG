@@ -340,6 +340,10 @@ async def run_benchmark():
                     status_label = "PASS" if res.get("is_correct") else "FAIL"
                     f1 = res.get("f1_score", 0.0)
                     print(f"    [{status_label}] F1: {f1:.2f} | Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
+                    
+                # P1 fix: true per-example isolation - purge ingested context after question evaluation
+                print("  Cleaning up isolated context...")
+                await cleanup_benchmark_tenant(client, config, token, benchmark_tenant_id)
 
     summary = {}
     for r in results:

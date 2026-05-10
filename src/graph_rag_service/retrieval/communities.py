@@ -150,7 +150,8 @@ class CommunityBuilder:
         SET c0.level = 0,
             c0.tenant_id = $tenant_id,
             c0.local_id = "0:" + toString(item.comms[0])
-        MERGE (n)-[:IN_COMMUNITY]->(c0)
+        MERGE (n)-[ic0:IN_COMMUNITY]->(c0)
+        SET ic0.level = 0
 
         WITH item, item.comms AS comms
         WHERE size(comms) > 1
@@ -179,7 +180,8 @@ class CommunityBuilder:
         MATCH (n:Entity) WHERE id(n) = item.node_id
         UNWIND range(0, size(item.comms)-1) AS level
         MERGE (c:Community {id: $tid_prefix + toString(level) + ":" + toString(item.comms[level])})
-        MERGE (n)-[:IN_COMMUNITY {level: level}]->(c)
+        MERGE (n)-[ic:IN_COMMUNITY]->(c)
+        SET ic.level = level
         """
         await self.store.execute_query(propagate_query, {
             "batch": batch_data,
@@ -221,6 +223,14 @@ class CommunityBuilder:
         supplemented by rolling up child community reports so the report
         remains meaningful even when entities are not directly linked.
         """
+        # Fetch actual community level from graph node — tenant-scoped
+        level_match = "MATCH (c:Community {id: $community_id, tenant_id: $tenant_id})" if tenant_id else "MATCH (c:Community {id: $community_id})"
+        level_res = await self.store.execute_query(
+            f"{level_match} RETURN coalesce(c.level, 0) AS level",
+            {"community_id": community_id, "tenant_id": tenant_id}
+        )
+        community_level = level_res[0]["level"] if level_res else 0
+
         # Get entities (works for all levels due to multi-level IN_COMMUNITY propagation)
         tenant_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
         entity_query = f"""
@@ -236,9 +246,10 @@ class CommunityBuilder:
         
         entities = [f"{r['name']} ({r['type']})" for r in entities_res]
 
-        # P0 fix: if no direct entities (parent community), roll up child community reports
+        # P1 fix: if community_level > 0, always roll up child community reports
+        # If no entities at all, use child names as placeholder entities.
         child_summaries: List[str] = []
-        if not entities:
+        if community_level > 0 or not entities:
             child_report_filter = "AND child.tenant_id = $tenant_id" if tenant_id else ""
             child_query = f"""
             MATCH (child:Community)-[:PARENT]->(parent:Community {{id: $community_id}})
@@ -254,11 +265,12 @@ class CommunityBuilder:
                 f"Child community '{r['title']}': {r['summary']}"
                 for r in child_res if r.get("title")
             ]
-            if not child_summaries:
+            if not entities and not child_summaries:
                 # Nothing at all — skip
                 return None
-            # Use child community names as placeholder entities for the prompt
-            entities = [r.get("title", r["child_id"]) for r in child_res if r.get("title")]
+            if not entities:
+                # Use child community names as placeholder entities for the prompt
+                entities = [r.get("title", r["child_id"]) for r in child_res if r.get("title")]
             
         evidence = await self.collect_evidence(community_id, tenant_id)
         
@@ -300,15 +312,7 @@ class CommunityBuilder:
         """
         
         response = await self.llm.complete(prompt, temperature=0.2)
-
-        # Fetch actual community level from graph node — tenant-scoped
-        level_match = "MATCH (c:Community {id: $community_id, tenant_id: $tenant_id})" if tenant_id else "MATCH (c:Community {id: $community_id})"
-        level_res = await self.store.execute_query(
-            f"{level_match} RETURN coalesce(c.level, 0) AS level",
-            {"community_id": community_id, "tenant_id": tenant_id}
-        )
-        community_level = level_res[0]["level"] if level_res else 0
-
+        
         # Build valid chunk ID set for citation validation
         valid_chunk_ids = {e["chunk_id"] for e in evidence}
 

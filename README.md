@@ -1,3 +1,14 @@
+---
+title: Graph RAG
+emoji: 🧠
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # CORTEX — Agentic Graph RAG Platform
 
 > **CORTEX** is a production-grade, agentic Knowledge Graph platform that transforms unstructured documents and web content into an intelligent, queryable knowledge graph — with a full-featured React UI, streaming AI chat, real-time graph visualization, simulation personas, and deep ontology governance.

@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y software-properties-common \
     git \
     redis-server \
     openjdk-17-jdk \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js for frontend build

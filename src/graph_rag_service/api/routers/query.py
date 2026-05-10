@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, UploadFile, File, Form, Query
+from fastapi import status
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 
@@ -29,6 +30,15 @@ async def query(
     import uuid
     import json
     conversation_id = request.conversation_id or str(uuid.uuid4())
+
+    # P1 Security: Cypher mode exposes freeform graph queries \u2014 restrict to admins.
+    # Even with _tenant_safe() heuristics, multi-node patterns can leak cross-tenant data.
+    effective_mode = request.mode or ("got" if request.use_got else "auto")
+    if effective_mode == "cypher" and "admin" not in getattr(current_user, "scopes", []):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cypher query mode is restricted to admin users."
+        )
     
     # 1. Initialize conversation and user message in Neo4j
     now_str = datetime.now(timezone.utc).isoformat()

@@ -412,24 +412,43 @@ class Neo4jStore(GraphStore, VectorStore):
 
     async def get_community_entities(
         self,
-        community_id: int,
-        limit: int = 50
+        community_id: str,
+        limit: int = 50,
+        tenant_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get all entities in a community"""
-        query = """
-        MATCH (e:Entity {community_id: $community_id})
+        """
+        Get all entities in a community using the IN_COMMUNITY relationship.
+
+        P0 fix: the previous implementation queried `{community_id: $community_id}`
+        on Entity nodes, which was the stale WCC property model. The current model
+        stores membership via (e:Entity)-[:IN_COMMUNITY]->(c:Community).
+        """
+        tenant_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
+        query = f"""
+        MATCH (e:Entity)-[:IN_COMMUNITY]->(c:Community {{id: $community_id}})
+        WHERE 1=1 {tenant_filter}
         OPTIONAL MATCH (e)-[r]-(neighbor:Entity)
+        WHERE neighbor.tenant_id = e.tenant_id
         RETURN e.name as name, e.type as type, e.properties as properties,
-               collect(DISTINCT {name: neighbor.name, rel: type(r)}) as connections
+               collect(DISTINCT {{name: neighbor.name, rel: type(r)}}) as connections
         LIMIT $limit
         """
-        return await self.execute_query(query, {"community_id": community_id, "limit": limit})
+        params: Dict[str, Any] = {"community_id": community_id, "limit": limit}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+        return await self.execute_query(query, params)
 
-    async def assign_community_ids(self) -> int:
+    async def assign_wcc_community_ids_legacy(self) -> int:
         """
-        Server-side community assignment using Neo4j GDS Weakly Connected Components (WCC).
-        Replaces the in-memory Python Union-Find which crashes on large graphs.
-        Returns number of communities found.
+        [LEGACY] Server-side community assignment using Neo4j GDS Weakly Connected
+        Components (WCC).  Renamed from assign_community_ids() to avoid confusion
+        with the Leiden-based hierarchical pipeline (CommunityBuilder.run_leiden).
+
+        This method writes a flat integer `community_id` property to each Entity
+        node.  It is kept for backward-compatibility but should NOT be called in
+        the normal ingestion flow; use CommunityBuilder instead.
+
+        Returns number of WCC communities found.
         """
         try:
             # 1. Ensure any old projection is dropped
@@ -460,7 +479,7 @@ class Neo4jStore(GraphStore, VectorStore):
             
             return component_count
         except Exception as e:
-            logger.info(f"Community assignment error (requires Neo4j GDS plugin): {e}")
+            logger.info(f"WCC community assignment error (requires Neo4j GDS plugin): {e}")
             return 0
 
     # ── Gap #5: Temporal queries ──────────────────────────────────────────────

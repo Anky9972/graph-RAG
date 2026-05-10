@@ -1,8 +1,9 @@
 import asyncio
 import json
+import os
 import time
 import httpx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 from pydantic import BaseModel
 import re
 import string
@@ -56,6 +57,13 @@ class BenchmarkConfig(BaseModel):
     modes: List[str] = ["naive", "hybrid", "hippo", "global_community"]
     dataset: str = "hotpot_qa"
     num_samples: int = 10
+    # P1 fix: benchmark_mode controls ingestion strategy
+    # "corpus"      — ingest ALL contexts first, then evaluate all questions (default)
+    # "per_example" — per question: ingest context, query, then continue
+    benchmark_mode: Literal["corpus", "per_example"] = "corpus"
+    # P1 fix: allow overriding admin credentials via environment variables
+    admin_user: str = os.environ.get("BENCHMARK_ADMIN_USER", "admin")
+    admin_password: str = os.environ.get("BENCHMARK_ADMIN_PASSWORD", "admin")
 
 def load_hf_dataset(config: BenchmarkConfig) -> List[Dict[str, str]]:
     try:
@@ -132,13 +140,19 @@ async def create_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkCo
         return token, "admin"
 
 async def authenticate(client: httpx.AsyncClient, config: BenchmarkConfig) -> str:
+    """Authenticate as admin using env-var overrideable credentials."""
     login_url = f"{config.base_url}/api/auth/login"
     try:
-        response = await client.post(login_url, json={"username": "admin", "password": "admin"}, timeout=10.0)
+        response = await client.post(
+            login_url,
+            json={"username": config.admin_user, "password": config.admin_password},
+            timeout=10.0
+        )
         response.raise_for_status()
         return response.json().get("access_token", "")
     except Exception as e:
-        print(f"Failed to authenticate with backend: {e}. Some endpoints may be inaccessible.")
+        print(f"Failed to authenticate with backend ({config.admin_user}): {e}. "
+              f"Set BENCHMARK_ADMIN_USER / BENCHMARK_ADMIN_PASSWORD env vars if needed.")
         return "test-token"
 
 async def ingest_context(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, q: Dict[str, str]):
@@ -213,22 +227,59 @@ async def build_communities(client: httpx.AsyncClient, config: BenchmarkConfig, 
     except Exception as e:
         print(f"  [Warning] Community indexing failed: {e}")
 
-async def cleanup_benchmark_tenant(client: httpx.AsyncClient, config: BenchmarkConfig, token: str, tenant_id: str):
-    """Delete all graph data for the benchmark tenant."""
+async def cleanup_benchmark_tenant(
+    client: httpx.AsyncClient,
+    config: BenchmarkConfig,
+    benchmark_token: str,
+    tenant_id: str
+):
+    """
+    Delete all graph data for the benchmark tenant.
+
+    P1 fix: First tries self-cleanup with the benchmark user's own token
+    (purge-tenant now allows users to delete their own tenant). Falls back to
+    an admin-authenticated token only if self-cleanup is rejected (403).
+    Admin credentials are configurable via env vars BENCHMARK_ADMIN_USER /
+    BENCHMARK_ADMIN_PASSWORD, removing the hardcoded admin/admin dependency.
+    """
     cleanup_url = f"{config.base_url}/api/graph/purge-tenant"
-    headers = {"Authorization": f"Bearer {token}"}
+    payload = {"tenant_id": tenant_id}
+
+    # --- Attempt 1: self-cleanup with benchmark user token ---
     try:
         res = await client.request(
             "DELETE",
             cleanup_url,
-            headers=headers,
-            json={"tenant_id": tenant_id},
+            headers={"Authorization": f"Bearer {benchmark_token}"},
+            json=payload,
             timeout=30.0
         )
-        res.raise_for_status()
-        print(f"  Benchmark tenant {tenant_id} cleaned up.")
+        if res.status_code == 200:
+            print(f"  Benchmark tenant {tenant_id} self-cleaned up.")
+            return
+        elif res.status_code == 403:
+            print(f"  Self-cleanup not permitted; falling back to admin cleanup.")
+        else:
+            print(f"  [Warning] Self-cleanup returned {res.status_code}; trying admin.")
     except Exception as e:
-        print(f"  [Warning] Cleanup failed for tenant {tenant_id}: {e}")
+        print(f"  [Warning] Self-cleanup request failed: {e}; trying admin.")
+
+    # --- Attempt 2: admin-authenticated cleanup ---
+    async with httpx.AsyncClient() as admin_client:
+        try:
+            admin_token = await authenticate(admin_client, config)
+            res = await admin_client.request(
+                "DELETE",
+                cleanup_url,
+                headers={"Authorization": f"Bearer {admin_token}"},
+                json=payload,
+                timeout=30.0
+            )
+            res.raise_for_status()
+            print(f"  Benchmark tenant {tenant_id} admin-cleaned up.")
+        except Exception as e:
+            print(f"  [Warning] Admin cleanup failed for tenant {tenant_id}: {e}")
+            print(f"  Set BENCHMARK_ADMIN_USER / BENCHMARK_ADMIN_PASSWORD env vars if admin credentials differ from defaults.")
 
 async def run_benchmark():
     config = BenchmarkConfig()
@@ -236,40 +287,60 @@ async def run_benchmark():
     
     print(f"Starting benchmark on {config.dataset} with {len(dataset)} questions...")
     print(f"Modes to test: {config.modes}")
+    print(f"Benchmark mode: {config.benchmark_mode}")
+    if config.benchmark_mode == "corpus":
+        print("  [corpus mode] All contexts ingested first, then all questions evaluated.")
+    else:
+        print("  [per_example mode] Each question ingests its own context before evaluation.")
     
     results = []
     
     async with httpx.AsyncClient() as client:
-        # Authenticate first
-        # Create isolated tenant for benchmark
         print("\nCreating isolated benchmark tenant...")
         token, benchmark_tenant_id = await create_benchmark_tenant(client, config)
 
         has_community_mode = any(m in config.modes for m in ["global_community", "hippo"])
-        
-        # Ingest all contexts first before building communities or evaluating
-        print("\nIngesting all context documents...")
-        for i, q in enumerate(dataset):
-            print(f"  Ingesting context {i+1}/{len(dataset)}...")
-            await ingest_context(client, config, token, q)
-        
-        # Build community index once if needed
-        if has_community_mode:
-            print("\nBuilding community index (required for global_community mode)...")
-            await asyncio.sleep(2)  # Allow Neo4j to settle
-            await build_communities(client, config, token)
-        
-        for i, q in enumerate(dataset):
-            print(f"\nEvaluating Question {i+1}/{len(dataset)}: {q['question']}")
-            # Context already ingested above
-            for mode in config.modes:
-                print(f"  Running mode: {mode}...")
-                res = await evaluate_question(client, config, token, mode, q)
-                results.append(res)
-                status = "PASS" if res.get("is_correct") else "FAIL"
-                f1 = res.get("f1_score", 0.0)
-                print(f"    [{status}] F1: {f1:.2f} | Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
-                
+
+        if config.benchmark_mode == "corpus":
+            # ── Corpus mode: ingest all, build communities, then evaluate all ──
+            print("\nIngesting all context documents...")
+            for i, q in enumerate(dataset):
+                print(f"  Ingesting context {i+1}/{len(dataset)}...")
+                await ingest_context(client, config, token, q)
+
+            if has_community_mode:
+                print("\nBuilding community index (required for global_community mode)...")
+                await asyncio.sleep(2)  # Allow Neo4j to settle
+                await build_communities(client, config, token)
+
+            for i, q in enumerate(dataset):
+                print(f"\nEvaluating Question {i+1}/{len(dataset)}: {q['question']}")
+                for mode in config.modes:
+                    print(f"  Running mode: {mode}...")
+                    res = await evaluate_question(client, config, token, mode, q)
+                    results.append(res)
+                    status_label = "PASS" if res.get("is_correct") else "FAIL"
+                    f1 = res.get("f1_score", 0.0)
+                    print(f"    [{status_label}] F1: {f1:.2f} | Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
+
+        else:
+            # ── Per-example mode: ingest → query → continue for each question ──
+            for i, q in enumerate(dataset):
+                print(f"\nQuestion {i+1}/{len(dataset)}: {q['question']}")
+                print("  Ingesting context...")
+                await ingest_context(client, config, token, q)
+
+                # Minimal settle time for per-example (graph writes are async)
+                await asyncio.sleep(1)
+
+                for mode in config.modes:
+                    print(f"  Running mode: {mode}...")
+                    res = await evaluate_question(client, config, token, mode, q)
+                    results.append(res)
+                    status_label = "PASS" if res.get("is_correct") else "FAIL"
+                    f1 = res.get("f1_score", 0.0)
+                    print(f"    [{status_label}] F1: {f1:.2f} | Time: {res['duration']:.2f}s | Sources: {res.get('sources_count', 0)}")
+
     summary = {}
     for r in results:
         m = r["mode"]
@@ -283,17 +354,31 @@ async def run_benchmark():
         summary[m]["f1"] = summary[m].get("f1", 0.0) + r.get("f1_score", 0.0)
         
     print("\n=== BENCHMARK RESULTS ===")
+    print(f"Benchmark mode: {config.benchmark_mode}")
     for m, stats in summary.items():
         accuracy = (stats["correct"] / stats["total"]) * 100 if stats["total"] > 0 else 0
         avg_time = stats["time"] / stats["total"] if stats["total"] > 0 else 0
         avg_f1 = stats["f1"] / stats["total"] if stats["total"] > 0 else 0
         print(f"Mode: {m:<15} | Accuracy: {accuracy:>5.1f}% | Avg F1: {avg_f1:.3f} | Avg Time: {avg_time:>5.2f}s")
 
-    # Cleanup: remove all benchmark tenant data using admin token (purge-tenant requires admin scope)
+    # P1 fix: try self-cleanup first, then admin fallback
     if benchmark_tenant_id != "admin":
         async with httpx.AsyncClient() as cleanup_client:
-            admin_token = await authenticate(cleanup_client, BenchmarkConfig())
-            await cleanup_benchmark_tenant(cleanup_client, config, admin_token, benchmark_tenant_id)
+            # Re-authenticate the benchmark user for self-cleanup
+            try:
+                login_res = await cleanup_client.post(
+                    f"{config.base_url}/api/auth/login",
+                    json={"username": f"benchmark_user_{benchmark_tenant_id.split('_')[-1]}", "password": "password123"},
+                    timeout=10.0
+                )
+                if login_res.status_code == 200:
+                    fresh_token = login_res.json().get("access_token", token)
+                else:
+                    fresh_token = token
+            except Exception:
+                fresh_token = token
+
+            await cleanup_benchmark_tenant(cleanup_client, config, fresh_token, benchmark_tenant_id)
 
 if __name__ == "__main__":
     asyncio.run(run_benchmark())

@@ -270,19 +270,36 @@ async def delete_document(request: Request,
     document_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a document and all its chunks and entity links from the graph"""
-    # Remove chunks + document node; entities shared with other docs are kept
-    # We must retrieve the filename from the graph before deleting the node
-    query = "MATCH (d:Document {id: $doc_id}) RETURN d.filename as filename"
-    results = await request.app.state.graph_store.execute_query(query, {"doc_id": document_id})
-    filename_to_delete = results[0]["filename"] if results and results[0].get("filename") else None
+    """Delete a document and all its chunks and entity links from the graph.
+    
+    P0 security fix: enforces tenant_id ownership — a user can only delete
+    documents that belong to their own tenant.
+    """
+    tenant_id = current_user.tenant_id
+
+    # Verify ownership: fetch filename only if tenant matches
+    query = """
+    MATCH (d:Document {id: $doc_id, tenant_id: $tenant_id})
+    RETURN d.filename as filename
+    """
+    results = await request.app.state.graph_store.execute_query(
+        query, {"doc_id": document_id, "tenant_id": tenant_id}
+    )
+    if not results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or access denied."
+        )
+    filename_to_delete = results[0].get("filename")
 
     delete_query = """
-    MATCH (d:Document {id: $doc_id})
+    MATCH (d:Document {id: $doc_id, tenant_id: $tenant_id})
     OPTIONAL MATCH (d)-[:CONTAINS]->(c:Chunk)
     DETACH DELETE c, d
     """
-    await request.app.state.graph_store.execute_query(delete_query, {"doc_id": document_id})
+    await request.app.state.graph_store.execute_query(
+        delete_query, {"doc_id": document_id, "tenant_id": tenant_id}
+    )
 
     # Remove uploaded file from storage
     if filename_to_delete:
@@ -299,14 +316,28 @@ async def download_document(request: Request,
     document_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Download an uploaded document"""
+    """Download an uploaded document.
+    
+    P0 security fix: enforces tenant_id ownership so only the owning tenant
+    can download the file.
+    """
     from fastapi.responses import FileResponse
+    tenant_id = current_user.tenant_id
     
-    # 1. Look up the real filename associated with this hashed ID
-    query = "MATCH (d:Document {id: $doc_id}) RETURN d.filename as filename"
-    results = await request.app.state.graph_store.execute_query(query, {"doc_id": document_id})
-    
-    filename_target = results[0]["filename"] if results and results[0].get("filename") else None
+    # 1. Verify ownership and fetch filename in a single tenant-scoped query
+    query = """
+    MATCH (d:Document {id: $doc_id, tenant_id: $tenant_id})
+    RETURN d.filename as filename
+    """
+    results = await request.app.state.graph_store.execute_query(
+        query, {"doc_id": document_id, "tenant_id": tenant_id}
+    )
+    if not results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found or access denied."
+        )
+    filename_target = results[0].get("filename")
     
     if filename_target:
         possible_path = settings.upload_dir / filename_target
@@ -314,15 +345,6 @@ async def download_document(request: Request,
             return FileResponse(
                 path=possible_path,
                 filename=filename_target,
-                content_disposition_type="inline"
-            )
-            
-    # 2. Backups: Iterate and match stem or try URL fallback
-    for f in settings.upload_dir.iterdir():
-        if f.stem == document_id or f.name.startswith(document_id):
-            return FileResponse(
-                path=f,
-                filename=f.name,
                 content_disposition_type="inline"
             )
             
@@ -339,11 +361,21 @@ async def preview_document(request: Request,
     document_id: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Return raw text content of a document for in-app preview (works for .txt, .md scraped files)."""
+    """Return raw text content of a document for in-app preview (works for .txt, .md scraped files).
+    
+    P0 security fix: enforces tenant_id ownership — cross-tenant document
+    IDs are rejected with 404.
+    """
     from fastapi.responses import JSONResponse
+    tenant_id = current_user.tenant_id
 
-    query = "MATCH (d:Document {id: $doc_id}) RETURN d.filename as filename, d.file_type as file_type"
-    results = await request.app.state.graph_store.execute_query(query, {"doc_id": document_id})
+    query = """
+    MATCH (d:Document {id: $doc_id, tenant_id: $tenant_id})
+    RETURN d.filename as filename, d.file_type as file_type
+    """
+    results = await request.app.state.graph_store.execute_query(
+        query, {"doc_id": document_id, "tenant_id": tenant_id}
+    )
 
     if not results or not results[0].get("filename"):
         raise HTTPException(status_code=404, detail="Document not found in graph")

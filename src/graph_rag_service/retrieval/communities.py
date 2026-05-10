@@ -116,6 +116,10 @@ class CommunityBuilder:
     async def create_community_nodes(self, tenant_id: Optional[str] = None):
         """
         Creates (Community) nodes in Neo4j based on the 'leiden_community' properties.
+
+        P0 fix: entities are now linked via IN_COMMUNITY to EVERY level of their
+        community hierarchy, not just level 0.  This ensures generate_report()
+        can retrieve entities for parent communities.
         """
         tenant_filter = "n.tenant_id = $tenant_id AND" if tenant_id else ""
         
@@ -136,8 +140,7 @@ class CommunityBuilder:
         if not batch_data:
             return
 
-        # 2. Write communities with parameterized UNWIND — NO string interpolation
-        # Community IDs are tenant-scoped to prevent cross-tenant node collisions.
+        # 2. Write community nodes and PARENT edges (same as before)
         tid_prefix = (tenant_id + ":") if tenant_id else ""
         write_query = """
         UNWIND $batch AS item
@@ -168,7 +171,22 @@ class CommunityBuilder:
             "tenant_id": tenant_id,
             "tid_prefix": tid_prefix
         })
-        logger.info(f"Community nodes and IN_COMMUNITY relationships created for tenant {tenant_id}")
+
+        # 3. P0 fix: propagate IN_COMMUNITY edges from each entity to EVERY
+        #    ancestor level so that parent communities can find their entities.
+        propagate_query = """
+        UNWIND $batch AS item
+        MATCH (n:Entity) WHERE id(n) = item.node_id
+        UNWIND range(0, size(item.comms)-1) AS level
+        MERGE (c:Community {id: $tid_prefix + toString(level) + ":" + toString(item.comms[level])})
+        MERGE (n)-[:IN_COMMUNITY {level: level}]->(c)
+        """
+        await self.store.execute_query(propagate_query, {
+            "batch": batch_data,
+            "tenant_id": tenant_id,
+            "tid_prefix": tid_prefix
+        })
+        logger.info(f"Community nodes, PARENT edges, and multi-level IN_COMMUNITY relationships created for tenant {tenant_id}")
 
     async def collect_evidence(self, community_id: str, tenant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -197,8 +215,13 @@ class CommunityBuilder:
     async def generate_report(self, community_id: str, tenant_id: Optional[str] = None) -> Optional[CommunityReport]:
         """
         Generates an LLM-backed community report.
+
+        For leaf communities (level 0) entities are fetched directly via
+        IN_COMMUNITY edges.  For parent communities the entity list may be
+        supplemented by rolling up child community reports so the report
+        remains meaningful even when entities are not directly linked.
         """
-        # Get entities
+        # Get entities (works for all levels due to multi-level IN_COMMUNITY propagation)
         tenant_filter = "AND e.tenant_id = $tenant_id" if tenant_id else ""
         entity_query = f"""
         MATCH (comm:Community {{id: $community_id}})<-[:IN_COMMUNITY]-(e:Entity)
@@ -212,18 +235,48 @@ class CommunityBuilder:
         })
         
         entities = [f"{r['name']} ({r['type']})" for r in entities_res]
+
+        # P0 fix: if no direct entities (parent community), roll up child community reports
+        child_summaries: List[str] = []
         if not entities:
-            return None
+            child_report_filter = "AND child.tenant_id = $tenant_id" if tenant_id else ""
+            child_query = f"""
+            MATCH (child:Community)-[:PARENT]->(parent:Community {{id: $community_id}})
+            WHERE child.report_generated = true {child_report_filter}
+            RETURN child.id AS child_id, child.title AS title, child.summary AS summary
+            LIMIT 20
+            """
+            child_res = await self.store.execute_query(child_query, {
+                "community_id": community_id,
+                "tenant_id": tenant_id
+            })
+            child_summaries = [
+                f"Child community '{r['title']}': {r['summary']}"
+                for r in child_res if r.get("title")
+            ]
+            if not child_summaries:
+                # Nothing at all — skip
+                return None
+            # Use child community names as placeholder entities for the prompt
+            entities = [r.get("title", r["child_id"]) for r in child_res if r.get("title")]
             
         evidence = await self.collect_evidence(community_id, tenant_id)
         
         evidence_texts = [f"Chunk {e['chunk_id']}: {e['text']}" for e in evidence[:10]]
+
+        # Build prompt — include child summaries when available for parent communities
+        child_context = ""
+        if child_summaries:
+            child_context = f"""
+        Child community summaries (for parent report synthesis):
+        {'\n'.join(child_summaries[:10])}
+"""
         prompt = f"""
         You are an expert analyst generating a Community Report for a knowledge graph.
         
         Entities in this community:
         {", ".join(entities[:20])}
-        
+        {child_context}
         Evidence chunks:
         {"\n---\n".join(evidence_texts)}
         
@@ -336,9 +389,19 @@ class CommunityBuilder:
             """, params)
 
     async def generate_all_reports(self, tenant_id: Optional[str] = None) -> List[CommunityReport]:
-        """Generate reports for all communities."""
+        """
+        Generate reports for all communities.
+
+        P0 fix: communities are processed in ascending level order so that
+        child reports always exist before parent report generation, enabling
+        parents to summarise child summaries.
+        """
         tenant_filter = "WHERE c.tenant_id = $tenant_id" if tenant_id else ""
-        query = f"MATCH (c:Community) {tenant_filter} RETURN c.id AS id"
+        query = f"""
+        MATCH (c:Community) {tenant_filter}
+        RETURN c.id AS id, coalesce(c.level, 0) AS level
+        ORDER BY level ASC
+        """
         results = await self.store.execute_query(query, {"tenant_id": tenant_id})
         reports = []
         for r in results:

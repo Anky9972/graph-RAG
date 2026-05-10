@@ -287,14 +287,23 @@ async def purge_tenant_data(
 ):
     """
     Delete ALL graph data (nodes + relationships) belonging to a given tenant.
-    ADMIN-ONLY. Used by benchmark cleanup and test teardown.
-    """
-    if "admin" not in current_user.scopes:
-        raise HTTPException(status_code=403, detail="Admin scope required for purge-tenant.")
 
+    P1 fix: Users may purge their OWN tenant without admin scope \u2014 this
+    enables benchmark cleanup in local dev without seeded admin credentials.
+    Admin users can purge any tenant regardless of ownership.
+    """
     target_tenant_id = payload.get("tenant_id")
     if not target_tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id is required.")
+
+    is_admin = "admin" in current_user.scopes
+    is_own_tenant = target_tenant_id == current_user.tenant_id
+
+    if not is_admin and not is_own_tenant:
+        raise HTTPException(
+            status_code=403,
+            detail="You may only purge your own tenant. Admin scope is required to purge other tenants."
+        )
 
     # Hard-delete all nodes scoped to this tenant
     query = """
